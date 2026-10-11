@@ -74,11 +74,14 @@ def to_gear_params(frame: geometry.Frame, values: dict) -> gearcore.GearParams:
         tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'))
 
 
+class NothingToJoin(gearcore.GearError):
+    """Operation is Join and the gear touches no body (VAL-12)."""
+
+
 @dataclasses.dataclass
 class Settings:
     """What the dialog currently says."""
     curve: typing.Any
-    target: typing.Any
     operation: str
     flip: bool
     expressions: dict
@@ -216,13 +219,9 @@ class SpurGearFeature:
         current = feature.customNamedValues.value('operation') if feature else NEW_BODY
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
-        target = inputs.addSelectionInput('target', 'Target body', 'Select the body to join to')
-        target.addSelectionFilter('SolidBodies')
         if feature:
-            # Not yet editable: changing them means restructuring the feature.
+            # Not yet editable: changing it means restructuring the feature.
             operation.isEnabled = False
-            target.isVisible = False
-            target.setSelectionLimits(0, 1)
 
         flip = feature.customNamedValues.value('flip') == '1' if feature else False
         inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
@@ -253,58 +252,23 @@ class SpurGearFeature:
                 return None
             expressions[pid], values[pid] = value_input.expression, value_input.value
         curve_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('curve'))
-        target_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('target'))
         operation = adsk.core.DropDownCommandInput.cast(inputs.itemById('operation')).selectedItem.name
         curve = curve_input.selection(0).entity if curve_input.selectionCount else None
-        target = None
-        if operation == JOIN:
-            if self._editing:
-                target = self._stored_target(self._editing)
-            elif target_input.selectionCount:
-                target = target_input.selection(0).entity
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
-        return Settings(curve, target, operation, flip, expressions, values)
+        return Settings(curve, operation, flip, expressions, values)
 
-    @staticmethod
-    def _stored_target(feature: adsk.fusion.CustomFeature):
-        """The body a Join gear was joined to, as it is at the current timeline position."""
-        try:
-            token = feature.customNamedValues.value('target')
-            for entity in design().findEntityByToken(token) if token else []:
-                body = adsk.fusion.BRepBody.cast(entity)
-                if body and body.isValid:
-                    return body
-        except Exception:
-            log('target body lookup failed:\n' + traceback.format_exc())
-        return None
-
-    def _update_dialog(self, inputs: adsk.core.CommandInputs):
+    def _update_dialog(self, inputs: adsk.core.CommandInputs, note: str = ''):
         settings = self._read(inputs)
-        if not self._editing:
-            target = adsk.core.SelectionCommandInput.cast(inputs.itemById('target'))
-            join = settings is not None and settings.operation == JOIN
-            target.isVisible = join
-            target.setSelectionLimits(1 if join else 0, 1)
-            if not join:
-                target.clearSelection()
         text = 'Enter valid values.'
         if settings is not None:
             text = info_text(evaluate(settings.curve, settings.values))
-            if settings.operation == JOIN and settings.target is None:   # VAL-12
-                text += '<br/><b>Error:</b> Select the body to join to.'
+        if note:
+            text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
-        if args.input.id == 'info':
-            return
-        inputs = self._command.commandInputs
-        self._update_dialog(inputs)
-        if args.input.id == 'operation' and not self._editing:
-            # Picking Join should let the user click the body right away; otherwise
-            # clicks keep going to the curve selection.
-            target = adsk.core.SelectionCommandInput.cast(inputs.itemById('target'))
-            if target.isVisible:
-                target.hasFocus = True
+        if args.input.id != 'info':
+            self._update_dialog(self._command.commandInputs)
 
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
         if args.activeInput.id == 'curve':
@@ -314,7 +278,6 @@ class SpurGearFeature:
         settings = self._read(args.inputs)
         args.areInputsValid = (
             settings is not None
-            and (settings.operation == NEW_BODY or settings.target is not None)   # VAL-12
             and evaluate(settings.curve, settings.values).outline is not None)    # UI-5
 
     def _on_activate(self, args: adsk.core.CommandEventArgs):
@@ -352,7 +315,11 @@ class SpurGearFeature:
             if self._editing:
                 log('edit preview: marker at {}, feature at {}'.format(
                     design().timeline.markerPosition, self._editing.timelineObject.index))
-            self._create(settings)
+            try:
+                self._create(settings)
+            except NothingToJoin as e:
+                # VAL-12 can only be checked with the gear body in hand.
+                self._update_dialog(args.command.commandInputs, str(e))
             # Without this the preview stays invisible after the inputs were
             # invalid for a moment, until the mouse moves over it.
             app.activeViewport.refresh()
@@ -363,15 +330,16 @@ class SpurGearFeature:
             raise RuntimeError('The inputs are not valid.')
         if self._editing:
             self._apply_edit(self._editing, settings)
-        else:
+            return
+        try:
             self._create(settings)
+        except NothingToJoin as e:
+            ui.messageBox(str(e), NAME)
 
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
         ev = evaluate(settings.curve, settings.values)
-        if ev.outline is None or (settings.operation == JOIN and settings.target is None):
-            log('create skipped: outline {}, operation {}, target {}'.format(
-                ev.outline is not None, settings.operation, settings.target is not None))
+        if ev.outline is None:
             return None
         component = geometry.native(settings.curve).parentSketch.parentComponent
         features = component.features
@@ -391,14 +359,23 @@ class SpurGearFeature:
             base.bodies.count, [base.bodies.item(i).isSolid for i in range(base.bodies.count)]))
         last = base
         if settings.operation == JOIN:
-            target = geometry.native(settings.target)
+            # Like Extrude, Join merges the gear into every body it touches (FEA-6).
+            gear = base.bodies.item(0)
+            targets = geometry.touching_bodies(component, gear)
+            log('  join: touches {}'.format([b.name for b in targets]))
+            if not targets:
+                base.deleteMe()
+                raise NothingToJoin('The gear does not touch a body to join to. Use New Body, '
+                                    'or move the curve onto a body.')   # VAL-12
             tools = adsk.core.ObjectCollection.create()
-            tools.add(base.bodies.item(0))
-            combine = features.combineFeatures.createInput(target, tools)
+            tools.add(gear)
+            for other in targets[1:]:
+                tools.add(other)
+            combine = features.combineFeatures.createInput(targets[0], tools)
             combine.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
             last = features.combineFeatures.add(combine)
             log('  combine into {!r}: health {} {!r}, component has {} bodies'.format(
-                target.name, last.healthState, last.errorOrWarningMessage,
+                targets[0].name, last.healthState, last.errorOrWarningMessage,
                 component.bRepBodies.count))
 
         inp = features.customFeatures.createInput(self._definition)
@@ -417,20 +394,13 @@ class SpurGearFeature:
 
     @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):
-        """Point the feature at its curve (FEA-2) and, for Join, its target body.
-        Dependencies can only refer to the design as it was before the feature."""
+        """Point the feature at its curve (FEA-2). A dependency can only refer to
+        the design as it was before the feature."""
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
-            # The target body is not a dependency: the combine feature already
-            # refers to it, and the gear would depend on the body it modifies. Its
-            # token is kept so the edit dialog can find the body as it was before
-            # the gear.
-            if settings.operation == JOIN and settings.target is not None:
-                feature.customNamedValues.addOrSetValue(
-                    'target', geometry.native(settings.target).entityToken)
             wanted = {'curve': settings.curve}
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid

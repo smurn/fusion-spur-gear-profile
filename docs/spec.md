@@ -1,11 +1,12 @@
 # Spur Gear: Specification
 
-Status: **Draft 0.3** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
+Status: **Draft 0.4** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
 Tests and code reference these IDs. Decisions are recorded in §11.
 
 Draft 0.3 replaces the sketch-constraint design of draft 0.2 with a custom feature that
 produces a solid body. The reasons are in [spikes.md](spikes.md). Retired IDs: SKT-1 to
-SKT-12, VAL-9, D-1, D-4, D-6, SPIKE-1 to SPIKE-4.
+SKT-12, VAL-9, D-1, D-4, D-6, SPIKE-1 to SPIKE-4. Draft 0.4 drops the target body
+selection for Join (retired: IN-16).
 
 ## 1. Purpose and scope
 
@@ -79,8 +80,7 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-12 | Thickness b | 5 mm | > 0 |
 | IN-13 | Flip side | off | Off: the gear extends from the sketch plane along its normal. On: the opposite side |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
-| IN-15 | Operation | New Body | New Body or Join |
-| IN-16 | Target body | none | Join only: the body the gear is joined to |
+| IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units.
@@ -154,11 +154,15 @@ it a solid.
   its plane, and has the tooth count of DER-1 for the curve's current diameter.
 - **FEA-5** IN-2 to IN-12 and IN-14 are feature parameters. They appear in the parameters
   dialog under the feature and accept expressions and user parameters.
-- **FEA-6** New Body creates one new solid body. Join adds the gear to the target body and
-  creates no additional body.
+- **FEA-6** New Body creates one new solid body. Join merges the gear into every visible solid
+  body of the same component that it touches or overlaps when it is created, as Extrude does,
+  and creates no additional body. The user does not select a target.
 - **FEA-7** Editing the feature opens the dialog of §3 with the feature's current values,
-  including the curve selection, operation and target body. OK applies the changes to the
-  same feature.
+  including the curve selection and operation. OK applies the changes to the same feature.
+- **FEA-11** Fusion offers Edit Feature for custom features only in Hybrid and Assembly
+  designs, not in Part designs. This is a limitation of Fusion, also seen with other custom
+  feature add-ins. In a Part design the gear is still created, recomputed and editable
+  through the parameters dialog.
 - **FEA-8** If a recompute cannot produce a valid gear (a VAL error, or the curve no longer
   exists), the feature is marked as failed in the timeline and keeps its previous body.
 - **FEA-9** Recomputing requires the add-in to be running. The design must still open without
@@ -169,8 +173,7 @@ it a solid.
 ## 8. Command and user interface
 
 - **UI-1** The command button is in the SOLID › CREATE panel.
-- **UI-2** The curve selection accepts only sketch circles and sketch arcs. The target body
-  selection accepts only solid bodies and is shown only for Join.
+- **UI-2** The curve selection accepts only sketch circles and sketch arcs.
 - **UI-3** Live preview: on every input change the preview shows the resulting body. It must
   be geometrically identical to the committed result.
 - **UI-4** Derived values (§5) and validation messages (§9) update together with the preview.
@@ -191,7 +194,7 @@ it a solid.
 | VAL-8 | Undercut present (DER-7) | info |
 | VAL-10 | Thickness b ≤ 0 | error |
 | VAL-11 | Bore does not fit inside the root circle: d_B − 2δ ≥ d_f | error |
-| VAL-12 | Operation is Join and no target body is selected | error |
+| VAL-12 | Operation is Join and the gear touches no body | error |
 
 ## 10. Accuracy
 
@@ -220,6 +223,8 @@ Resolved on 2026-10-11, after the spikes:
 - **D-10** Arc mode is closed by straight radial edges (GEO-10). Replaces D-1.
 - **D-11** An optional bore is part of the feature (IN-14, GEO-11).
 - **D-12** Operations are New Body and Join (IN-15).
+- **D-19** Join finds its bodies itself, like Fusion's own features; there is no target
+  selection (FEA-6).
 - **D-13** The add-in is self-contained and does not share a framework with other add-ins.
 - **D-14** No tooth-count limit or warning. A recompute took 1.6 s at z = 200 in the spike.
 - **D-15** Default thickness is 5 mm (IN-12).
@@ -233,6 +238,7 @@ The spikes are done; results are in [spikes.md](spikes.md). The custom feature d
 tested in SPIKE-5. These points were not covered and are checked first during implementation:
 
 - **CHK-1** The edit dialog, including rolling the timeline back while it is open (FEA-7).
+  Result so far: works in Hybrid designs only (FEA-11).
 - **CHK-2** Undo and redo of create and edit (UI-6).
 - **CHK-3** Save, close and reopen; opening a design without the add-in running (FEA-9).
 - **CHK-4** A curve on a plane other than XY, on a planar face, and inside a component (FEA-10).

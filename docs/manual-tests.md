@@ -34,6 +34,9 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 
 ## Edit dialog (CHK-1, FEA-7)
 
+Use a Hybrid design for this section. In a Part design Fusion does not offer Edit Feature for
+custom features (FEA-11).
+
 12. Double-click the feature in the timeline, or right-click › Edit Feature. The dialog opens
     with the current values and the circle selected.
 13. Change Thickness and tick Flip side. The preview updates. OK. The gear is on the other
@@ -51,9 +54,11 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 ## Join (CHK-5, FEA-6)
 
 18. Extrude a 60 x 60 mm plate, 2 mm thick, downward from the XY plane, around the circle.
-19. Spur Gear. Pick the circle, then set Operation to Join. A "Target body" selection appears
-    and takes the focus; click the plate. The preview shows the gear on the plate. OK. The
-    body count does not increase and the gear is fused to the plate.
+19. Spur Gear. Pick the circle, then set Operation to Join. No target is selected: the
+    preview shows the gear fused to the plate it sits on. OK. The body count does not
+    increase.
+19a. Draw a circle away from every body and try Join on it. The info box says the gear does
+    not touch a body, and OK shows the same message without creating anything (VAL-12).
 20. Move the circle in its sketch. The gear moves on the plate; no gear is left behind at the
     old position.
 
