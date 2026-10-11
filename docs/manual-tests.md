@@ -1,8 +1,8 @@
 # Manual tests
 
 Checklist for the Fusion layer (TST-3). Run the add-in from Scripts and Add-Ins first.
-Until the later phases land, use gears with at least 18 teeth, no print offset and no bore;
-other inputs show "Not supported yet" and disable OK.
+Print offset is not implemented yet: a non-zero value shows "Not supported yet" and disables
+OK.
 
 Record the result of each item as pass or fail, with a note on what happened.
 
@@ -17,8 +17,9 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 2. Only sketch circles and arcs can be picked for "Circle or arc" (UI-2).
 3. Pick the circle. The info box shows 24 teeth and the diameters (UI-4).
 4. A preview of the gear appears and follows changes to Module and Thickness (UI-3, CHK-6).
-5. Set Module to 3 mm. The tooth count drops to 8, the info box reports undercut as not
-   supported yet, and OK is disabled (UI-5). Set Module back to 1 mm.
+5. Set Module to 3 mm. The tooth count drops to 8, the info box reports undercut, and the
+   preview shows 8 undercut teeth. Set Module to 20 mm: fewer than 3 teeth is an error and OK
+   is disabled (UI-5). Set Module back to 1 mm; the preview returns.
 6. OK. One body appears. The timeline shows one "Spur Gear1" node with the gear icon (FEA-1).
 7. The body is 5 mm thick and sits on the +Z side of the sketch plane (GEO-12).
 
@@ -28,9 +29,9 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 9. Change the circle diameter to 30 mm. The gear has 30 teeth.
 10. Modify › Change Parameters: the feature lists its parameters. Change Thickness to 8 mm;
     the gear updates. Set Module to an expression using a user parameter; it updates.
-11. Change the circle diameter to 8 mm (undercut, not supported yet). The feature turns red or
-    yellow in the timeline and keeps its previous body (FEA-8). Set it back to 30 mm; the
-    feature recovers.
+11. Change the circle diameter to 2 mm (fewer than 3 teeth). The feature turns red or yellow
+    in the timeline and keeps its previous body (FEA-8). Set it back to 30 mm; the feature
+    recovers.
 
 ## Edit dialog (CHK-1, FEA-7)
 
@@ -70,6 +71,22 @@ custom features (FEA-11).
 23. Create a new component, activate it, sketch a circle in it and create a gear. The body
     belongs to that component. Move the component; the gear moves with it. Edit the circle;
     the gear follows.
+
+## Undercut, bore and arc mode (GEO-4, GEO-10, GEO-11)
+
+27. Create a gear on a circle of diameter 10 mm (10 teeth). The teeth are visibly undercut:
+    narrower just above the root than higher up.
+28. Edit it and set Bore diameter to 4 mm. A round hole goes through the gear. Set it to
+    9 mm: the info box says the bore does not fit inside the root circle and OK is disabled.
+29. Draw an arc of radius 12 mm covering about 120 degrees. Create a gear on it. It is a
+    sector: teeth along the arc, centered on the arc's middle, closed by two straight edges
+    that meet at the arc's center. The info box shows how many teeth are generated.
+30. Edit it and set Bore diameter to 6 mm. The straight edges now end on a round cutout around
+    the center.
+31. Edit the sketch and make the arc longer. Teeth are added. Make it shorter than one tooth
+    pitch: the feature fails and keeps its previous body.
+32. Set Start rotation to 50 on the sector gear. The teeth shift by half a pitch and the count
+    may change by one.
 
 ## Save and reopen (CHK-3, FEA-9)
 

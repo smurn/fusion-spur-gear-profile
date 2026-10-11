@@ -43,12 +43,51 @@ class ToothProfile:
         self.phi_flank = (self.uc + self.vc / math.tan(a)) / self.r
 
         self.undercut = d.undercut
-        if not self.undercut:
-            #: Radius where the root curve meets the flank, and the involute roll
-            #: parameters (tangent of the pressure angle) at that point and at the tip.
-            self.r_join = math.hypot(*self.trochoid(self.phi_flank))
-            self.t_join = math.sqrt(max((self.r_join / self.rb) ** 2 - 1, 0.0))
-            self.t_tip = math.sqrt((self.ra / self.rb) ** 2 - 1)
+        #: Rack roll angle at which the root curve meets the flank. Without undercut
+        #: that is where the fillet ends and the two curves are tangent. With
+        #: undercut the root curve cuts into the flank and crosses it (GEO-4).
+        self.phi_join = self._undercut_crossing() if self.undercut else self.phi_flank
+        #: Radius of that point, and the involute roll parameters (tangent of the
+        #: pressure angle) there and at the tip.
+        self.r_join = math.hypot(*self.trochoid(self.phi_join))
+        self.t_join = math.sqrt(max((self.r_join / self.rb) ** 2 - 1, 0.0))
+        self.t_tip = math.sqrt(max((self.ra / self.rb) ** 2 - 1, 0.0))
+
+    def _beyond_flank(self, phi: float):
+        """Angle by which the root curve point lies on the gap side of the involute
+        at the same radius. Negative: it cuts into the flank. None inside the base
+        circle, where there is no involute."""
+        x, y = self.trochoid(phi)
+        rad = math.hypot(x, y)
+        if rad < self.rb:
+            return None
+        t = math.sqrt((rad / self.rb) ** 2 - 1)
+        return math.atan2(y, x) - (self._involute_turn - (t - math.atan(t)))
+
+    def _undercut_crossing(self) -> float:
+        """Roll angle where the root curve, coming up from the root circle, leaves
+        the flank it has undercut (GEO-4)."""
+        steps = 600
+        last_phi, last = None, None
+        for i in range(steps + 1):
+            phi = self.phi_root + (self.phi_flank - self.phi_root) * i / steps
+            gap = self._beyond_flank(phi)
+            if gap is None:
+                last_phi, last = None, None
+                continue
+            if last is not None and last < 0 <= gap:
+                lo, hi = last_phi, phi
+                for _ in range(60):
+                    mid = (lo + hi) / 2
+                    if self._beyond_flank(mid) < 0:
+                        lo = mid
+                    else:
+                        hi = mid
+                return (lo + hi) / 2
+            last_phi, last = phi, gap
+        # So little undercut that the crossing is not resolved: treat the curves
+        # as tangent where the fillet ends.
+        return self.phi_flank
 
     # -- exact curves ----------------------------------------------------------
     def involute(self, t: float):
@@ -68,7 +107,8 @@ class ToothProfile:
 
     def trochoid(self, phi: float):
         """Root curve point for rack roll angle phi (GEO-3): the envelope of the
-        rack's tip fillet. Valid from phi_flank to phi_root."""
+        rack's tip fillet. Valid from phi_flank to phi_root; the outline uses it
+        from phi_join."""
         r, vc = self.r, self.vc
         du = self.uc - r * phi
         n = math.hypot(vc, du)

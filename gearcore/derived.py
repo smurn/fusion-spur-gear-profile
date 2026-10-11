@@ -24,11 +24,26 @@ class Derived:
     undercut: bool             # DER-7
     #: DER-8, s_a. None if the tip circle lies inside the base circle.
     tip_thickness: typing.Optional[float]
+    generated_teeth: int       # DER-9; equals `teeth` for a full circle
 
 
 def tooth_count(p: GearParams) -> int:
     """DER-1. Exact halves round up."""
     return math.floor(p.diameter / p.module + 0.5)
+
+
+def tooth_axes(p: GearParams) -> typing.List[float]:
+    """Angles of the axes of the generated teeth, ascending (GEO-9). The reference
+    direction is angle 0; for an arc that is the direction to its midpoint."""
+    z = tooth_count(p)
+    tau = 2 * math.pi / z
+    if p.arc_span is None:
+        return [(p.rotation + k) * tau for k in range(z)]
+    # Arc: only teeth whose whole pitch unit (axis +- tau / 2) lies within the arc.
+    reach = p.arc_span / 2 - tau / 2 + 1e-9
+    first = math.ceil(-reach / tau - p.rotation)
+    last = math.floor(reach / tau - p.rotation)
+    return [(p.rotation + k) * tau for k in range(first, last + 1)]
 
 
 def derive(p: GearParams) -> Derived:
@@ -48,4 +63,4 @@ def derive(p: GearParams) -> Derived:
         s_a = d_a * (s / d + inv(a) - inv(math.acos(d_b / d_a)) + 2 * delta / d_b)
     return Derived(teeth=z, reference_diameter=d, base_diameter=d_b, tip_diameter=d_a,
                    root_diameter=d_f, tooth_thickness=s, min_teeth=z_min, undercut=z < z_min,
-                   tip_thickness=s_a)
+                   tip_thickness=s_a, generated_teeth=len(tooth_axes(p)) if z > 0 else 0)

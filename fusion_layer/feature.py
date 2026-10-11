@@ -121,7 +121,10 @@ def info_text(ev: Evaluation) -> str:
     lines = []
     if ev.params:
         d = gearcore.derive(ev.params)
-        lines.append('<b>{} teeth</b>, selected diameter {:.3f} mm'.format(d.teeth, ev.params.diameter))
+        teeth = '{} teeth'.format(d.teeth)
+        if ev.params.arc_span is not None:   # DER-9
+            teeth = '{} of {} teeth'.format(d.generated_teeth, d.teeth)
+        lines.append('<b>{}</b>, selected diameter {:.3f} mm'.format(teeth, ev.params.diameter))
         lines.append('Reference {:.3f} / base {:.3f} mm'.format(d.reference_diameter, d.base_diameter))
         lines.append('Tip {:.3f} / root {:.3f} mm'.format(d.tip_diameter, d.root_diameter))
         if d.tip_thickness is not None:

@@ -112,9 +112,14 @@ def _curves(frame: Frame, outline: gearcore.Outline) -> list:
     curves = []
     for seg in outline.segments:
         if isinstance(seg, gearcore.Arc):
+            # Arc3D runs counter-clockwise about the normal; a clockwise outline arc
+            # is the same curve started from its other end.
+            start = seg.start_angle + min(seg.sweep, 0.0)
             curves.append(adsk.core.Arc3D.createByCenter(
-                frame.point(seg.center), frame.normal, frame.direction(seg.start_angle),
-                seg.radius * CM, 0.0, seg.sweep))
+                frame.point(seg.center), frame.normal, frame.direction(start),
+                seg.radius * CM, 0.0, abs(seg.sweep)))
+        elif isinstance(seg, gearcore.Line):
+            curves.append(adsk.core.Line3D.create(frame.point(seg.start), frame.point(seg.end)))
         else:
             curves.append(adsk.core.NurbsCurve3D.createNonRational(
                 [frame.point(p) for p in seg.control_points], seg.degree, list(seg.knots), False))
@@ -128,8 +133,12 @@ def build_body(component: adsk.fusion.Component, base: adsk.fusion.BaseFeature, 
     The outline becomes a planar face in memory. The face is extruded inside the
     base feature, which adds nothing to the timeline."""
     manager = adsk.fusion.TemporaryBRepManager.get()
-    wire, _ = manager.createWireFromCurves(_curves(frame, outline), False)
-    face_body = component.bRepBodies.add(manager.createFaceFromPlanarWires([wire]), base)
+    wires = [manager.createWireFromCurves(_curves(frame, outline), False)[0]]
+    for hole in outline.holes:   # GEO-11
+        circle = adsk.core.Circle3D.createByCenter(
+            frame.point(hole.center), frame.normal, hole.radius * CM)
+        wires.append(manager.createWireFromCurves([circle], False)[0])
+    face_body = component.bRepBodies.add(manager.createFaceFromPlanarWires(wires), base)
     try:
         face = face_body.faces.item(0)
         want = -1.0 if flip else 1.0   # side of the plane, along the sketch normal

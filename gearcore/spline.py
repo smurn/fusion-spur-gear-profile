@@ -116,8 +116,8 @@ def interpolate(points: typing.Sequence[Point], tangent0: Point, tangent1: Point
 
 
 def _span_deviation(spline: Spline, span: int, curve: CurveFn, ta: float, tb: float) -> float:
-    exact = [curve(ta + (tb - ta) * k / 48) for k in range(49)]
-    return max(dist_to_polyline(spline.span_point(span, k / 8), exact) for k in range(1, 8))
+    exact = [curve(ta + (tb - ta) * k / 64) for k in range(65)]
+    return max(dist_to_polyline(spline.span_point(span, k / 16), exact) for k in range(1, 16))
 
 
 def fit(curve: CurveFn, t0: float, t1: float, tolerance: float,
@@ -133,11 +133,13 @@ def fit(curve: CurveFn, t0: float, t1: float, tolerance: float,
     if tangent1 is None:
         back = _numeric_tangent(curve, t1, t0)
         tangent1 = (-back[0], -back[1])
+    # The deviation is only sampled, so aim a little below the tolerance.
+    target = 0.9 * tolerance
     ts = [t0, (t0 + t1) / 2, t1]
     for _ in range(12):
         spline = interpolate([curve(t) for t in ts], tangent0, tangent1)
         bad = [i for i in range(len(ts) - 1)
-               if _span_deviation(spline, i, curve, ts[i], ts[i + 1]) > tolerance]
+               if _span_deviation(spline, i, curve, ts[i], ts[i + 1]) > target]
         if not bad:
             return spline
         for i in reversed(bad):

@@ -45,14 +45,16 @@ def _range_issues(p: GearParams):
 
 
 def validate(p: GearParams) -> list:
-    """All issues with the parameters. VAL-1 and VAL-12 concern selections and
-    are checked by the Fusion layer. VAL-6 is checked with arc mode."""
+    """All issues with the parameters. VAL-1 and VAL-12 need the design and are
+    checked by the Fusion layer."""
     issues = _range_issues(p)
     if issues:
         return issues   # the derived values are meaningless
     d = derive(p)
     if tooth_count(p) < 3:
         return [Issue('VAL-2', ERROR, 'Fewer than 3 teeth: the curve is too small for this module.')]
+    if d.generated_teeth == 0:
+        issues.append(Issue('VAL-6', ERROR, 'The arc is too short for a complete tooth.'))
     if d.root_diameter <= 0:
         issues.append(Issue('VAL-4', ERROR, 'The root diameter is not positive.'))
     if p.fillet > max_fillet(p):

@@ -18,6 +18,9 @@ CASES = {
     'sharp rack corner': GearParams(24.0, fillet=0.0),
     'fine tolerance': GearParams(24.0, tolerance=0.0005),
     'rotated': GearParams(24.0, rotation=0.37),
+    'undercut z12': GearParams(12.0),
+    'undercut z6': GearParams(6.0),
+    'undercut, sharp corner': GearParams(10.0, fillet=0.0),
 }
 
 
@@ -32,7 +35,7 @@ def exact_half_tooth(tooth, n=2000):
     pts = [(tooth.ra * math.cos(a), tooth.ra * math.sin(a))
            for a in (tooth.tip_angle * i / 50 for i in range(50))]
     pts += [tooth.involute(tooth.t_tip + (tooth.t_join - tooth.t_tip) * i / n) for i in range(n + 1)]
-    pts += [tooth.trochoid(tooth.phi_flank + (tooth.phi_root - tooth.phi_flank) * i / n)
+    pts += [tooth.trochoid(tooth.phi_join + (tooth.phi_root - tooth.phi_join) * i / n)
             for i in range(1, n + 1)]
     pts += [(tooth.rf * math.cos(a), tooth.rf * math.sin(a))
             for a in (tooth.root_angle + tooth.phi_root * i / 50 for i in range(1, 51))]
@@ -129,12 +132,17 @@ def test_invalid_parameters_raise():
         gear_outline(GearParams(2.0))
 
 
-@pytest.mark.parametrize('change, what', [
-    ({'diameter': 12.0}, 'undercut'),
-    ({'print_offset': 0.1}, 'print offset'),
-    ({'bore': 5.0}, 'bore'),
-    ({'arc_span': 1.0}, 'arc mode'),
-])
-def test_later_phases_are_not_silently_ignored(change, what):
-    with pytest.raises(NotImplementedError, match=what):
-        gear_outline(dataclasses.replace(GearParams(24.0), **change))
+def test_print_offset_is_not_silently_ignored():
+    with pytest.raises(NotImplementedError, match='print offset'):
+        gear_outline(dataclasses.replace(GearParams(24.0), print_offset=0.1))
+
+
+def test_undercut_makes_the_tooth_root_thinner():
+    """GEO-4: with undercut, the outline at the base circle is narrower than the
+    involute alone would make it."""
+    p = GearParams(8.0)
+    tooth = ToothProfile(p)
+    outline = gear_outline(p)
+    root_curve = outline.segments[4]   # upper root curve of the first tooth
+    narrowest = min(math.atan2(y, x) for x, y in root_curve.sample(32))
+    assert narrowest < math.atan2(*reversed(tooth.involute(tooth.t_join)))
