@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "Stefan",
+	"description": {
+		"": "Feasibility spikes SPIKE-1 to SPIKE-4 for the Spur Gear Profile add-in."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

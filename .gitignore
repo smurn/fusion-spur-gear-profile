@@ -1,4 +1,5 @@
 __pycache__/
+spikes/GearSpikes/results/
 *.py[cod]
 .vscode/
 .env/
