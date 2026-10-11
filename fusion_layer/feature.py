@@ -145,6 +145,9 @@ class SpurGearFeature:
 
         self._definition = adsk.fusion.CustomFeatureDefinition.create(FEATURE_ID, NAME, resources)
         self._definition.editCommandId = EDIT_ID
+        log('registered feature {!r}, edit command {!r} (exists: {})'.format(
+            self._definition.id, self._definition.editCommandId,
+            ui.commandDefinitions.itemById(EDIT_ID) is not None))
         self._listen(self._definition.customFeatureCompute, adsk.fusion.CustomFeatureEventHandler,
                      self._on_compute, self._handlers, quiet=True)
 
@@ -182,6 +185,7 @@ class SpurGearFeature:
         self._build_dialog(args.command)
 
     def _on_edit_created(self, args: adsk.core.CommandCreatedEventArgs):
+        log('edit command started, {} entities selected'.format(ui.activeSelections.count))
         feature = adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity)
         if feature is None:
             raise RuntimeError('Select a Spur Gear feature to edit.')
@@ -264,11 +268,21 @@ class SpurGearFeature:
         text = 'Enter valid values.'
         if settings is not None:
             text = info_text(evaluate(settings.curve, settings.values))
+            if settings.operation == JOIN and settings.target is None:   # VAL-12
+                text += '<br/><b>Error:</b> Select the body to join to.'
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
-        if args.input.id != 'info':
-            self._update_dialog(self._command.commandInputs)
+        if args.input.id == 'info':
+            return
+        inputs = self._command.commandInputs
+        self._update_dialog(inputs)
+        if args.input.id == 'operation' and not self._editing:
+            # Picking Join should let the user click the body right away; otherwise
+            # clicks keep going to the curve selection.
+            target = adsk.core.SelectionCommandInput.cast(inputs.itemById('target'))
+            if target.isVisible:
+                target.hasFocus = True
 
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
         if args.activeInput.id == 'curve':
@@ -311,6 +325,9 @@ class SpurGearFeature:
         settings = self._read(args.command.commandInputs)
         if settings is not None:
             self._create(settings)
+            # Without this the preview stays invisible after the inputs were
+            # invalid for a moment, until the mouse moves over it.
+            app.activeViewport.refresh()
 
     def _on_execute(self, args: adsk.core.CommandEventArgs):
         settings = self._read(args.command.commandInputs)
@@ -364,15 +381,38 @@ class SpurGearFeature:
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
-            wanted = {'curve': geometry.native(settings.curve)}
+            wanted = {'curve': settings.curve}
             if settings.operation == JOIN and settings.target is not None:
-                wanted['target'] = geometry.native(settings.target)
+                wanted['target'] = settings.target
             for dep_id, entity in wanted.items():
-                existing = feature.dependencies.itemById(dep_id)
-                if existing:
-                    existing.entity = entity
-                else:
-                    feature.dependencies.add(dep_id, entity)
+                # Inside a component, Fusion rejected the native entity ("Invalid
+                # argument entity"). Try the entity as it was selected, then the
+                # native one, then a proxy through an occurrence of its component.
+                candidates = [entity]
+                native = geometry.native(entity)
+                if native is not entity:
+                    candidates.append(native)
+                try:
+                    occurrences = design().rootComponent.allOccurrencesByComponent(
+                        feature.parentComponent)
+                    if occurrences.count:
+                        candidates.append(native.createForAssemblyContext(occurrences.item(0)))
+                except Exception:
+                    pass
+                error = None
+                for candidate in candidates:
+                    try:
+                        existing = feature.dependencies.itemById(dep_id)
+                        if existing:
+                            existing.entity = candidate
+                        else:
+                            feature.dependencies.add(dep_id, candidate)
+                        error = None
+                        break
+                    except RuntimeError as e:
+                        error = e
+                if error is not None:
+                    raise error
         finally:
             if resume_at is not None:
                 resume_at.rollTo(False)

@@ -51,8 +51,9 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 ## Join (CHK-5, FEA-6)
 
 18. Extrude a 60 x 60 mm plate, 2 mm thick, downward from the XY plane, around the circle.
-19. Spur Gear, Operation Join, pick the circle and the plate. OK. The body count does not
-    increase and the gear is fused to the plate.
+19. Spur Gear. Pick the circle, then set Operation to Join. A "Target body" selection appears
+    and takes the focus; click the plate. The preview shows the gear on the plate. OK. The
+    body count does not increase and the gear is fused to the plate.
 20. Move the circle in its sketch. The gear moves on the plate; no gear is left behind at the
     old position.
 
