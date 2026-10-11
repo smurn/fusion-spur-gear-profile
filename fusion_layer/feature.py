@@ -138,8 +138,6 @@ class SpurGearFeature:
         self._command_handlers = []  # kept while a dialog is open
         self._command = None
         self._editing: typing.Optional[adsk.fusion.CustomFeature] = None
-        self._resume_at = None       # timeline object to return to after an edit
-        self._fusion_rolls_timeline = False
 
         for cid, callback in ((CREATE_ID, self._on_create_created), (EDIT_ID, self._on_edit_created)):
             old = ui.commandDefinitions.itemById(cid)
@@ -196,15 +194,6 @@ class SpurGearFeature:
         if feature is None:
             raise RuntimeError('Select a Spur Gear feature to edit.')
         self._editing = feature
-        # Let Fusion roll the timeline to the feature while the dialog is open and
-        # restore it afterwards. Rolling it ourselves (rollTo plus beginStep) worked
-        # but left Undo with an extra step that only moved the timeline marker.
-        self._fusion_rolls_timeline = False
-        try:
-            args.command.editingFeature = feature
-            self._fusion_rolls_timeline = True
-        except Exception:
-            log('editingFeature is not available, rolling the timeline manually')
         self._build_dialog(args.command)
 
     def _build_dialog(self, command: adsk.core.Command):
@@ -300,15 +289,12 @@ class SpurGearFeature:
         args.areInputsValid = valid   # UI-5
 
     def _on_activate(self, args: adsk.core.CommandEventArgs):
-        """Edit only: show the design as it was before the feature and select its curve."""
-        timeline = design().timeline
-        position = timeline.markerPosition
-        log('edit activated: marker at {} of {}, feature at {}, Fusion rolls the timeline: {}'.format(
-            position, timeline.count, self._editing.timelineObject.index, self._fusion_rolls_timeline))
-        if not self._fusion_rolls_timeline:
-            self._resume_at = timeline.item(position - 1) if position > 0 else None
-            self._editing.timelineObject.rollTo(True)
-            args.command.beginStep()
+        """Edit only: select the feature's curve. Selections cannot be set earlier.
+
+        The timeline stays where it is while the dialog is open. Rolling it back for
+        the whole edit (rollTo plus beginStep, or Command.editingFeature, which is
+        not always accepted) hid the gear and gave Undo an extra step that only
+        moved the timeline marker. _apply_edit rolls it back just for the change."""
         dependency = self._editing.dependencies.itemById('curve')
         if dependency and dependency.entity:
             selection = adsk.core.SelectionCommandInput.cast(
@@ -317,14 +303,9 @@ class SpurGearFeature:
                 log('could not select the curve of ' + self._editing.name)
 
     def _on_destroy(self, args: adsk.core.CommandEventArgs):
-        try:
-            if self._resume_at is not None:
-                self._resume_at.rollTo(False)
-        finally:
-            self._resume_at = None
-            self._command = None
-            self._command_handlers = []
-            self._editing = None
+        self._command = None
+        self._command_handlers = []
+        self._editing = None
 
     def _on_preview(self, args: adsk.core.CommandEventArgs):
         # Fusion undoes whatever the preview changes. While editing, the preview
@@ -335,7 +316,6 @@ class SpurGearFeature:
             try:
                 if self._editing:
                     self._apply_edit(self._editing, settings)
-                    self._show_edited_feature()
                 else:
                     self._create(settings)
             except NothingToJoin as e:
@@ -344,22 +324,6 @@ class SpurGearFeature:
             # Without this the preview stays invisible after the inputs were
             # invalid for a moment, until the mouse moves over it.
             app.activeViewport.refresh()
-
-    def _show_edited_feature(self):
-        """While a gear is edited, Fusion keeps the timeline before it, so its body
-        is hidden. For the preview, move the marker to just after the gear. Fusion
-        undoes this together with the rest of the preview."""
-        item = self._editing.timelineObject
-        timeline = design().timeline
-        try:
-            rolled_back = item.isRolledBack
-            log('edit preview: marker {} of {}, feature at {}, rolled back {}, suppressed {}'.format(
-                timeline.markerPosition, timeline.count, item.index, rolled_back, item.isSuppressed))
-            if rolled_back:
-                item.rollTo(False)
-                log('  marker moved to {}'.format(timeline.markerPosition))
-        except Exception:
-            log('could not show the edited gear:\n' + traceback.format_exc())
 
     def _on_execute(self, args: adsk.core.CommandEventArgs):
         settings = self._read(args.command.commandInputs)
@@ -472,11 +436,22 @@ class SpurGearFeature:
                 resume_at.rollTo(False)
 
     def _apply_edit(self, feature: adsk.fusion.CustomFeature, settings: Settings):
-        for pid, _, _, _ in PARAMS:
-            feature.parameters.itemById(pid).expression = settings.expressions[pid]
-        feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
-        self._set_dependencies(feature, settings)
-        self._recompute(feature)
+        """Change an existing gear. The feature can only be changed while the
+        timeline is before it; the marker is put back afterwards, all within the
+        command's transaction, so one Undo reverts the whole edit (UI-6)."""
+        timeline = design().timeline
+        position = timeline.markerPosition
+        resume_at = timeline.item(position - 1) if position > 0 else None
+        feature.timelineObject.rollTo(True)
+        try:
+            for pid, _, _, _ in PARAMS:
+                feature.parameters.itemById(pid).expression = settings.expressions[pid]
+            feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
+            self._set_dependencies(feature, settings)
+            self._recompute(feature)
+        finally:
+            if resume_at is not None:
+                resume_at.rollTo(False)
 
     def _recompute(self, feature: adsk.fusion.CustomFeature):
         """Rebuild the gear body from the feature's curve and parameters (FEA-2, FEA-4)."""
