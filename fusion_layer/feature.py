@@ -134,6 +134,7 @@ class SpurGearFeature:
         self._command = None
         self._editing: typing.Optional[adsk.fusion.CustomFeature] = None
         self._resume_at = None       # timeline object to return to after an edit
+        self._fusion_rolls_timeline = False
 
         for cid, callback in ((CREATE_ID, self._on_create_created), (EDIT_ID, self._on_edit_created)):
             old = ui.commandDefinitions.itemById(cid)
@@ -190,6 +191,15 @@ class SpurGearFeature:
         if feature is None:
             raise RuntimeError('Select a Spur Gear feature to edit.')
         self._editing = feature
+        # Let Fusion roll the timeline to the feature while the dialog is open and
+        # restore it afterwards. Rolling it ourselves (rollTo plus beginStep) worked
+        # but left Undo with an extra step that only moved the timeline marker.
+        self._fusion_rolls_timeline = False
+        try:
+            args.command.editingFeature = feature
+            self._fusion_rolls_timeline = True
+        except Exception:
+            log('editingFeature is not available, rolling the timeline manually')
         self._build_dialog(args.command)
 
     def _build_dialog(self, command: adsk.core.Command):
@@ -249,12 +259,24 @@ class SpurGearFeature:
         target = None
         if operation == JOIN:
             if self._editing:
-                dependency = self._editing.dependencies.itemById('target')
-                target = dependency.entity if dependency else None
+                target = self._stored_target(self._editing)
             elif target_input.selectionCount:
                 target = target_input.selection(0).entity
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
         return Settings(curve, target, operation, flip, expressions, values)
+
+    @staticmethod
+    def _stored_target(feature: adsk.fusion.CustomFeature):
+        """The body a Join gear was joined to, as it is at the current timeline position."""
+        try:
+            token = feature.customNamedValues.value('target')
+            for entity in design().findEntityByToken(token) if token else []:
+                body = adsk.fusion.BRepBody.cast(entity)
+                if body and body.isValid:
+                    return body
+        except Exception:
+            log('target body lookup failed:\n' + traceback.format_exc())
+        return None
 
     def _update_dialog(self, inputs: adsk.core.CommandInputs):
         settings = self._read(inputs)
@@ -299,9 +321,12 @@ class SpurGearFeature:
         """Edit only: show the design as it was before the feature and select its curve."""
         timeline = design().timeline
         position = timeline.markerPosition
-        self._resume_at = timeline.item(position - 1) if position > 0 else None
-        self._editing.timelineObject.rollTo(True)
-        args.command.beginStep()
+        log('edit activated: marker at {} of {}, feature at {}, Fusion rolls the timeline: {}'.format(
+            position, timeline.count, self._editing.timelineObject.index, self._fusion_rolls_timeline))
+        if not self._fusion_rolls_timeline:
+            self._resume_at = timeline.item(position - 1) if position > 0 else None
+            self._editing.timelineObject.rollTo(True)
+            args.command.beginStep()
         dependency = self._editing.dependencies.itemById('curve')
         if dependency and dependency.entity:
             selection = adsk.core.SelectionCommandInput.cast(
@@ -324,6 +349,9 @@ class SpurGearFeature:
         # before the edited feature, so the preview takes its place. Fusion undoes it.
         settings = self._read(args.command.commandInputs)
         if settings is not None:
+            if self._editing:
+                log('edit preview: marker at {}, feature at {}'.format(
+                    design().timeline.markerPosition, self._editing.timelineObject.index))
             self._create(settings)
             # Without this the preview stays invisible after the inputs were
             # invalid for a moment, until the mouse moves over it.
@@ -342,9 +370,15 @@ class SpurGearFeature:
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
         ev = evaluate(settings.curve, settings.values)
         if ev.outline is None or (settings.operation == JOIN and settings.target is None):
+            log('create skipped: outline {}, operation {}, target {}'.format(
+                ev.outline is not None, settings.operation, settings.target is not None))
             return None
         component = geometry.native(settings.curve).parentSketch.parentComponent
         features = component.features
+        timeline = design().timeline
+        log('create {} in {!r}: design intent {}, marker {} of {}'.format(
+            settings.operation, component.name, design().designIntent, timeline.markerPosition,
+            timeline.count))
 
         base = features.baseFeatures.add()
         base.startEdit()
@@ -353,13 +387,19 @@ class SpurGearFeature:
                                 settings.flip)
         finally:
             base.finishEdit()
+        log('  base feature has {} bodies, solid: {}'.format(
+            base.bodies.count, [base.bodies.item(i).isSolid for i in range(base.bodies.count)]))
         last = base
         if settings.operation == JOIN:
+            target = geometry.native(settings.target)
             tools = adsk.core.ObjectCollection.create()
             tools.add(base.bodies.item(0))
-            combine = features.combineFeatures.createInput(geometry.native(settings.target), tools)
+            combine = features.combineFeatures.createInput(target, tools)
             combine.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
             last = features.combineFeatures.add(combine)
+            log('  combine into {!r}: health {} {!r}, component has {} bodies'.format(
+                target.name, last.healthState, last.errorOrWarningMessage,
+                component.bRepBodies.count))
 
         inp = features.customFeatures.createInput(self._definition)
         for pid, label, kind, _ in PARAMS:
@@ -370,6 +410,9 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         self._set_dependencies(feature, settings)
+        log('  {} created: health {} {!r}, {} dependencies, marker {} of {}'.format(
+            feature.name, feature.healthState, feature.errorOrWarningMessage,
+            feature.dependencies.count, timeline.markerPosition, timeline.count))
         return feature
 
     @staticmethod
@@ -381,9 +424,14 @@ class SpurGearFeature:
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
-            wanted = {'curve': settings.curve}
+            # The target body is not a dependency: the combine feature already
+            # refers to it, and the gear would depend on the body it modifies. Its
+            # token is kept so the edit dialog can find the body as it was before
+            # the gear.
             if settings.operation == JOIN and settings.target is not None:
-                wanted['target'] = settings.target
+                feature.customNamedValues.addOrSetValue(
+                    'target', geometry.native(settings.target).entityToken)
+            wanted = {'curve': settings.curve}
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid
                 # argument entity"). Try the entity as it was selected, then the
