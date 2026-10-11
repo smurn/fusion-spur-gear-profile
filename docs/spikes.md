@@ -13,8 +13,10 @@ pattern) can be built and is geometrically correct, but it is **not usable**:
    solve, and a large rotation change corrupts the tooth shape.
 3. Solve time grows faster than the tooth count, so no practical tooth limit rescues it.
 
-The spec needs a different construction method before implementation starts. The gear
-math (`gearcore`, ARC-1) is not affected.
+The replacement, a custom feature that produces a solid gear, was tested in SPIKE-5 and
+works: the gear follows its circle, parameters are editable, and a recompute takes 0.2 s at
+z = 24 and 1.6 s at z = 200. The spec needs a new draft for this design. The gear math
+(`gearcore`, ARC-1) is not affected.
 
 ## SPIKE-1 API
 
@@ -99,7 +101,50 @@ area within 4e-5 of the exact value. Pattern instances join without extra constr
 This holds only when the selected circle is construction geometry. Left as drawn it cuts
 every tooth: 49 profiles at z = 24, 201 at z = 100. SKT-2 and SKT-9 conflict.
 
-## Open
+## SPIKE-5 Custom feature (added)
 
-- Replacement construction method. Candidate: a custom feature (preview API) that takes the
-  circle or arc as input and recomputes the geometry itself. Needs its own spike.
+Throwaway add-in `spikes/GearFeatureSpike`. The gear is a solid body with a thickness, made
+by a custom feature (preview API) that depends on the selected circle or arc.
+
+Design that works:
+
+- The body lives in a base feature. It is made by an extrude run inside the base feature
+  while it is in edit mode, which adds nothing to the timeline.
+- The custom feature groups the base feature alone (New Body) or the base feature plus one
+  combine feature (Join).
+- On recompute the add-in builds a new body the same way, swaps it in with
+  `BaseFeature.updateBody` and deletes the helper body. An extrude inside the base feature
+  is allowed during a recompute.
+
+| Check | Result |
+|---|---|
+| Create as New Body, z = 24 | Pass. Volume within 2e-5 of the exact gear. Timeline shows only the custom feature. |
+| Create as Join to a plate | Pass. Body count unchanged, the group holds the base feature and the combine. |
+| Recompute when the circle moves or changes size | Pass, also by hand (drag the circle, finish the sketch). |
+| Recompute when thickness, module or rotation change | Pass. |
+| Arc as input | Pass as a dependency: the gear follows a radius change. Arc-mode geometry was not built. |
+| Joined gear follows its circle | Recompute ran and reported success. The position check failed for a test reason (the tool body is consumed by the join), so the position is not verified. |
+
+Two ways to make the outline that is extruded:
+
+| Outline from | Create z = 24 | Recompute z = 24 | Create z = 200 | Recompute z = 200 |
+|---|---|---|---|---|
+| Planar face built in memory from NURBS curves and arcs | 0.22 s | 0.19 s | 1.7 s | 1.6 s |
+| Temporary sketch inside the base feature | 0.48 s | 0.43 s | 8.9 s | 9.2 s |
+
+The in-memory face is faster and its curves are fully under our control, which removes the
+dependence on Fusion's fitted splines (ACC-2).
+
+Requirements found the hard way:
+
+- Features must be created after the add-in's `run()` has returned. Created inside `run()`,
+  they show "The extension that owns this feature is not running" and never recompute.
+- The spike adds dependencies after the feature exists, with the timeline rolled back to
+  before it, following the Laser Finger Joint add-in. Whether `CustomFeatureInput.addDependency`
+  also works was not isolated.
+- Fusion calls the compute handler twice during creation; the spike ignores those calls.
+- `ExtrudeFeatureInput.setDistanceExtent` does not exist in this API version; use
+  `setOneSideExtent`.
+
+Not tested: the edit command (the spike has none), undo and redo, save and reopen, a design
+opened without the add-in, a selected curve on a non-XY plane or inside a component.

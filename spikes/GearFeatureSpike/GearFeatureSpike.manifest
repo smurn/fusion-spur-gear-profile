@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "5d0f1c0e-6c1b-4a8e-9d57-2f1f3a6b7c41",
+	"author": "Stefan",
+	"description": {
+		"": "SPIKE-5: spur gear as a custom feature (throwaway)."
+	},
+	"version": "0.0.1",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}

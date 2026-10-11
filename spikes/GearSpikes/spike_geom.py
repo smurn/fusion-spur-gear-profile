@@ -203,6 +203,48 @@ def cubic_spline_samples(pts, per_span=30, param='chord', end='natural'):
     return out
 
 
+def spline_bezier(pts):
+    """C2 cubic spline through pts (chord-length, not-a-knot) as Bezier segments.
+    Returns (control_points, knots) of the equivalent degree-3 NURBS curve."""
+    n = len(pts)
+    h = [math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) for i in range(n - 1)]
+    derivs = []
+    for dim in (0, 1):
+        y = [p[dim] for p in pts]
+        a = [[0.0] * n for _ in range(n)]
+        b = [0.0] * n
+        for i in range(1, n - 1):
+            a[i][i - 1], a[i][i], a[i][i + 1] = h[i - 1], 2 * (h[i - 1] + h[i]), h[i]
+            b[i] = 6 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])
+        a[0][0], a[0][1], a[0][2] = h[1], -(h[0] + h[1]), h[0]
+        a[n - 1][n - 3], a[n - 1][n - 2], a[n - 1][n - 1] = h[n - 2], -(h[n - 3] + h[n - 2]), h[n - 3]
+        mm = _solve(a, b)
+        d = [(y[i + 1] - y[i]) / h[i] - h[i] * (2 * mm[i] + mm[i + 1]) / 6 for i in range(n - 1)]
+        d.append((y[n - 1] - y[n - 2]) / h[n - 2] + h[n - 2] * (2 * mm[n - 1] + mm[n - 2]) / 6)
+        derivs.append(d)
+    cps, knots, u = [pts[0]], [0.0] * 4, 0.0
+    for i in range(n - 1):
+        cps.append((pts[i][0] + h[i] * derivs[0][i] / 3, pts[i][1] + h[i] * derivs[1][i] / 3))
+        cps.append((pts[i + 1][0] - h[i] * derivs[0][i + 1] / 3,
+                    pts[i + 1][1] - h[i] * derivs[1][i + 1] / 3))
+        cps.append(pts[i + 1])
+        u += h[i]
+        knots += [u] * (3 if i < n - 2 else 4)
+    return cps, knots
+
+
+def bezier_samples(cps, per_span=20):
+    out = []
+    for i in range(0, len(cps) - 1, 3):
+        p0, p1, p2, p3 = cps[i:i + 4]
+        for k in range(per_span + 1):
+            t = k / per_span
+            w = ((1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t * t * (1 - t), t ** 3)
+            out.append(tuple(w[0] * p0[j] + w[1] * p1[j] + w[2] * p2[j] + w[3] * p3[j]
+                             for j in (0, 1)))
+    return out
+
+
 def _self_check():
     for m, z in ((1, 18), (1, 24), (1, 100), (5, 24), (1, 200)):
         g = Gear(m=m, z=z)
@@ -237,8 +279,15 @@ def _self_check():
         c, s = math.cos(k * g.tau), math.sin(k * g.tau)
         for x, y in half[::97]:
             assert dist_to_polyline(g.fold(x * c + y * s, x * s - y * c), half) < 1e-9 * m
-        print('ok  m={} z={:3d}  r_join={:.4f} rb={:.4f} rf={:.4f} area={:.3f}'.format(
-            m, z, g.r_join, g.rb, g.rf, g.area()))
+        # Bezier form of the spline through 12 points stays close to the exact curves.
+        dev_inv = max_deviation(bezier_samples(spline_bezier(g.involute_points(12))[0]),
+                                g.involute_polyline(3000))
+        dev_tro = max_deviation(bezier_samples(spline_bezier(g.trochoid_points(12))[0]),
+                                g.trochoid_polyline(3000))
+        assert max(dev_inv, dev_tro) < 1e-3 * m, (z, dev_inv, dev_tro)
+        print('ok  m={} z={:3d}  r_join={:.4f} rb={:.4f} rf={:.4f} area={:.3f} '
+              'bezier dev inv {:.1e} tro {:.1e}'.format(
+                  m, z, g.r_join, g.rb, g.rf, g.area(), dev_inv, dev_tro))
     # A cubic spline through points of a circle stays close to the circle.
     circ = [(math.cos(a / 10), math.sin(a / 10)) for a in range(8)]
     for end in ('natural', 'notaknot'):
