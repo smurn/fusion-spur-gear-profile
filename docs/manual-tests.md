@@ -58,7 +58,7 @@ custom features (FEA-11).
     preview shows the gear fused to the plate it sits on. OK. The body count does not
     increase.
 19a. Draw a circle away from every body and try Join on it. The info box says the gear does
-    not touch a body, and OK shows the same message without creating anything (VAL-12).
+    not touch a body, and OK is disabled (VAL-12).
 20. Move the circle in its sketch. The gear moves on the plate; no gear is left behind at the
     old position.
 

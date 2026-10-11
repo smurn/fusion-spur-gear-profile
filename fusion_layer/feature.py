@@ -26,6 +26,8 @@ WORKSPACE_ID = 'FusionSolidEnvironment'
 PANEL_ID = 'SolidCreatePanel'
 
 NEW_BODY, JOIN = 'New Body', 'Join'
+NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or move the curve '
+                   'onto a body.')
 
 #: Numeric inputs: id, label, kind (length | angle | number), default expression.
 #: They are dialog inputs and feature parameters (FEA-5). Never change the ids.
@@ -257,11 +259,26 @@ class SpurGearFeature:
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
         return Settings(curve, operation, flip, expressions, values)
 
+    def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
+        """VAL-12, checked without building the gear: if not even a cylinder of the
+        tip diameter touches a body, there is nothing to join to. A gear that
+        misses a body only between its teeth is caught when it is created."""
+        if settings.operation != JOIN or self._editing or ev.outline is None:
+            return ''
+        component = geometry.native(settings.curve).parentSketch.parentComponent
+        envelope = geometry.envelope_body(
+            ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
+        if geometry.touching_bodies(component, envelope):
+            return ''
+        return NOTHING_TO_JOIN
+
     def _update_dialog(self, inputs: adsk.core.CommandInputs, note: str = ''):
         settings = self._read(inputs)
         text = 'Enter valid values.'
         if settings is not None:
-            text = info_text(evaluate(settings.curve, settings.values))
+            ev = evaluate(settings.curve, settings.values)
+            text = info_text(ev)
+            note = note or self._join_problem(settings, ev)
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
@@ -276,9 +293,11 @@ class SpurGearFeature:
 
     def _on_validate(self, args: adsk.core.ValidateInputsEventArgs):
         settings = self._read(args.inputs)
-        args.areInputsValid = (
-            settings is not None
-            and evaluate(settings.curve, settings.values).outline is not None)    # UI-5
+        valid = False
+        if settings is not None:
+            ev = evaluate(settings.curve, settings.values)
+            valid = ev.outline is not None and not self._join_problem(settings, ev)
+        args.areInputsValid = valid   # UI-5
 
     def _on_activate(self, args: adsk.core.CommandEventArgs):
         """Edit only: show the design as it was before the feature and select its curve."""
@@ -308,15 +327,16 @@ class SpurGearFeature:
             self._editing = None
 
     def _on_preview(self, args: adsk.core.CommandEventArgs):
-        # A new feature in both modes: while editing, the timeline is rolled back to
-        # before the edited feature, so the preview takes its place. Fusion undoes it.
+        # Fusion undoes whatever the preview changes. While editing, the preview
+        # applies the edit to the feature itself; creating a second feature for it
+        # made the gear disappear.
         settings = self._read(args.command.commandInputs)
         if settings is not None:
-            if self._editing:
-                log('edit preview: marker at {}, feature at {}'.format(
-                    design().timeline.markerPosition, self._editing.timelineObject.index))
             try:
-                self._create(settings)
+                if self._editing:
+                    self._apply_edit(self._editing, settings)
+                else:
+                    self._create(settings)
             except NothingToJoin as e:
                 # VAL-12 can only be checked with the gear body in hand.
                 self._update_dialog(args.command.commandInputs, str(e))
@@ -365,8 +385,7 @@ class SpurGearFeature:
             log('  join: touches {}'.format([b.name for b in targets]))
             if not targets:
                 base.deleteMe()
-                raise NothingToJoin('The gear does not touch a body to join to. Use New Body, '
-                                    'or move the curve onto a body.')   # VAL-12
+                raise NothingToJoin(NOTHING_TO_JOIN)   # VAL-12
             tools = adsk.core.ObjectCollection.create()
             tools.add(gear)
             for other in targets[1:]:

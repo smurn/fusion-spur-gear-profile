@@ -99,6 +99,15 @@ def touching_bodies(component: adsk.fusion.Component, tool: adsk.fusion.BRepBody
     return found
 
 
+def envelope_body(frame: Frame, radius: float, thickness: float, flip: bool) -> adsk.fusion.BRepBody:
+    """Temporary cylinder that encloses a gear with the given tip radius (mm)."""
+    t = thickness * CM * (-1.0 if flip else 1.0)
+    o, n = frame.origin, frame.normal
+    top = adsk.core.Point3D.create(o.x + n.x * t, o.y + n.y * t, o.z + n.z * t)
+    return adsk.fusion.TemporaryBRepManager.get().createCylinderOrCone(
+        o, radius * CM, top, radius * CM)
+
+
 def _curves(frame: Frame, outline: gearcore.Outline) -> list:
     curves = []
     for seg in outline.segments:
