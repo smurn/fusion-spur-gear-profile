@@ -1,81 +1,43 @@
-"""Spur Gear Profile add-in for Autodesk Fusion.
+"""Spur Gear add-in for Autodesk Fusion.
 
-Adds a "Spur Gear Profile" button to SOLID > CREATE. The gear geometry is not
-implemented yet; the command currently only confirms that the add-in loads.
+Adds "Spur Gear" to SOLID > CREATE. It turns a sketch circle or arc into a solid
+involute spur gear that stays attached to that curve. See docs/spec.md.
 """
 
+import os
+import sys
 import traceback
 
 import adsk.core
-import adsk.fusion
 
-CMD_ID = 'smurn_SpurGearProfile'
-CMD_NAME = 'Spur Gear Profile'
-CMD_DESCRIPTION = 'Create an involute spur gear profile sketch.'
-WORKSPACE_ID = 'FusionSolidEnvironment'
-PANEL_ID = 'SolidCreatePanel'
-
-_app: adsk.core.Application = None
-_ui: adsk.core.UserInterface = None
-
-# Event handlers must stay referenced or Fusion garbage-collects them.
-_handlers = []
-
-
-class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
-    def notify(self, args: adsk.core.CommandCreatedEventArgs):
-        try:
-            cmd = args.command
-            on_execute = CommandExecuteHandler()
-            cmd.execute.add(on_execute)
-            _handlers.append(on_execute)
-        except Exception:
-            _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
-
-
-class CommandExecuteHandler(adsk.core.CommandEventHandler):
-    def notify(self, args: adsk.core.CommandEventArgs):
-        try:
-            _ui.messageBox('Spur Gear Profile: not implemented yet.')
-        except Exception:
-            _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+_feature = None
 
 
 def run(context):
-    global _app, _ui
+    global _feature
     try:
-        _app = adsk.core.Application.get()
-        _ui = _app.userInterface
+        # Fusion keeps modules loaded between runs. Drop ours so that edited code
+        # is picked up when the add-in is stopped and started again.
+        if __package__:
+            for name in [n for n in sys.modules if n.startswith(__package__ + '.')]:
+                del sys.modules[name]
+        from .fusion_layer import feature
 
-        cmd_def = _ui.commandDefinitions.itemById(CMD_ID)
-        if not cmd_def:
-            cmd_def = _ui.commandDefinitions.addButtonDefinition(
-                CMD_ID, CMD_NAME, CMD_DESCRIPTION)
-
-        on_created = CommandCreatedHandler()
-        cmd_def.commandCreated.add(on_created)
-        _handlers.append(on_created)
-
-        panel = _ui.workspaces.itemById(WORKSPACE_ID).toolbarPanels.itemById(PANEL_ID)
-        if not panel.controls.itemById(CMD_ID):
-            panel.controls.addCommand(cmd_def)
+        # Custom features must only be created after run() has returned (ARC-4).
+        # Here only the feature type and its commands are registered.
+        resources = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
+        _feature = feature.SpurGearFeature(resources)
     except Exception:
-        if _ui:
-            _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+        adsk.core.Application.get().userInterface.messageBox(
+            'Spur Gear failed to start:\n{}'.format(traceback.format_exc()))
 
 
 def stop(context):
+    global _feature
     try:
-        panel = _ui.workspaces.itemById(WORKSPACE_ID).toolbarPanels.itemById(PANEL_ID)
-        control = panel.controls.itemById(CMD_ID)
-        if control:
-            control.deleteMe()
-
-        cmd_def = _ui.commandDefinitions.itemById(CMD_ID)
-        if cmd_def:
-            cmd_def.deleteMe()
-
-        _handlers.clear()
+        if _feature:
+            _feature.close()
+        _feature = None
     except Exception:
-        if _ui:
-            _ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+        adsk.core.Application.get().userInterface.messageBox(
+            'Spur Gear failed to stop:\n{}'.format(traceback.format_exc()))
