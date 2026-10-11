@@ -149,9 +149,6 @@ class SpurGearFeature:
 
         self._definition = adsk.fusion.CustomFeatureDefinition.create(FEATURE_ID, NAME, resources)
         self._definition.editCommandId = EDIT_ID
-        log('registered feature {!r}, edit command {!r} (exists: {})'.format(
-            self._definition.id, self._definition.editCommandId,
-            ui.commandDefinitions.itemById(EDIT_ID) is not None))
         self._listen(self._definition.customFeatureCompute, adsk.fusion.CustomFeatureEventHandler,
                      self._on_compute, self._handlers, quiet=True)
 
@@ -189,7 +186,6 @@ class SpurGearFeature:
         self._build_dialog(args.command)
 
     def _on_edit_created(self, args: adsk.core.CommandCreatedEventArgs):
-        log('edit command started, {} entities selected'.format(ui.activeSelections.count))
         feature = adsk.fusion.CustomFeature.cast(ui.activeSelections.item(0).entity)
         if feature is None:
             raise RuntimeError('Select a Spur Gear feature to edit.')
@@ -344,10 +340,6 @@ class SpurGearFeature:
             return None
         component = geometry.native(settings.curve).parentSketch.parentComponent
         features = component.features
-        timeline = design().timeline
-        log('create {} in {!r}: design intent {}, marker {} of {}'.format(
-            settings.operation, component.name, design().designIntent, timeline.markerPosition,
-            timeline.count))
 
         base = features.baseFeatures.add()
         base.startEdit()
@@ -356,14 +348,11 @@ class SpurGearFeature:
                                 settings.flip)
         finally:
             base.finishEdit()
-        log('  base feature has {} bodies, solid: {}'.format(
-            base.bodies.count, [base.bodies.item(i).isSolid for i in range(base.bodies.count)]))
         last = base
         if settings.operation == JOIN:
             # Like Extrude, Join merges the gear into every body it touches (FEA-6).
             gear = base.bodies.item(0)
             targets = geometry.touching_bodies(component, gear)
-            log('  join: touches {}'.format([b.name for b in targets]))
             if not targets:
                 base.deleteMe()
                 raise NothingToJoin(NOTHING_TO_JOIN)   # VAL-12
@@ -374,9 +363,6 @@ class SpurGearFeature:
             combine = features.combineFeatures.createInput(targets[0], tools)
             combine.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
             last = features.combineFeatures.add(combine)
-            log('  combine into {!r}: health {} {!r}, component has {} bodies'.format(
-                targets[0].name, last.healthState, last.errorOrWarningMessage,
-                component.bRepBodies.count))
 
         inp = features.customFeatures.createInput(self._definition)
         for pid, label, kind, _ in PARAMS:
@@ -387,9 +373,6 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         self._set_dependencies(feature, settings)
-        log('  {} created: health {} {!r}, {} dependencies, marker {} of {}'.format(
-            feature.name, feature.healthState, feature.errorOrWarningMessage,
-            feature.dependencies.count, timeline.markerPosition, timeline.count))
         return feature
 
     @staticmethod

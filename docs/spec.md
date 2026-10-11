@@ -235,15 +235,20 @@ Resolved on 2026-10-11, after the spikes:
 ## 12. Feasibility
 
 The spikes are done; results are in [spikes.md](spikes.md). The custom feature design was
-tested in SPIKE-5. These points were not covered and are checked first during implementation:
+tested in SPIKE-5. The points it left open were checked by hand on the first working version
+of the add-in (2026-10-11):
 
-- **CHK-1** The edit dialog, including rolling the timeline back while it is open (FEA-7).
-  Result so far: works in Hybrid designs only (FEA-11).
-- **CHK-2** Undo and redo of create and edit (UI-6).
-- **CHK-3** Save, close and reopen; opening a design without the add-in running (FEA-9).
-- **CHK-4** A curve on a plane other than XY, on a planar face, and inside a component (FEA-10).
-- **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6).
-- **CHK-6** Preview inside the dialog (UI-3).
+- **CHK-1** The edit dialog (FEA-7): works, in Hybrid designs only (FEA-11). The timeline is
+  rolled back only while a change is applied, not for as long as the dialog is open; rolling
+  it back for the whole edit hid the gear and broke Undo.
+- **CHK-2** Undo and redo of create and edit (UI-6): work, one step each.
+- **CHK-3** Save, close and reopen (FEA-9): works. Without the add-in the gear keeps its last
+  body, the feature shows a different icon and a changed curve gives a warning. After the
+  add-in starts again, a recompute picks up the changes.
+- **CHK-4** A curve on a tilted offset plane, on a planar face, and inside a component
+  (FEA-10): works.
+- **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): not yet confirmed.
+- **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
 
 ## 13. Architecture and testing
 
