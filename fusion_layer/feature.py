@@ -335,6 +335,7 @@ class SpurGearFeature:
             try:
                 if self._editing:
                     self._apply_edit(self._editing, settings)
+                    self._show_edited_feature()
                 else:
                     self._create(settings)
             except NothingToJoin as e:
@@ -343,6 +344,22 @@ class SpurGearFeature:
             # Without this the preview stays invisible after the inputs were
             # invalid for a moment, until the mouse moves over it.
             app.activeViewport.refresh()
+
+    def _show_edited_feature(self):
+        """While a gear is edited, Fusion keeps the timeline before it, so its body
+        is hidden. For the preview, move the marker to just after the gear. Fusion
+        undoes this together with the rest of the preview."""
+        item = self._editing.timelineObject
+        timeline = design().timeline
+        try:
+            rolled_back = item.isRolledBack
+            log('edit preview: marker {} of {}, feature at {}, rolled back {}, suppressed {}'.format(
+                timeline.markerPosition, timeline.count, item.index, rolled_back, item.isSuppressed))
+            if rolled_back:
+                item.rollTo(False)
+                log('  marker moved to {}'.format(timeline.markerPosition))
+        except Exception:
+            log('could not show the edited gear:\n' + traceback.format_exc())
 
     def _on_execute(self, args: adsk.core.CommandEventArgs):
         settings = self._read(args.command.commandInputs)
