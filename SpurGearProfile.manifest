@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "9f40ce24-ab17-4b09-a38a-bb81e589a3f4",
+	"author": "Stefan",
+	"description": {
+		"": "Generates involute spur gear profiles as sketches."
+	},
+	"version": "0.1.0",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
