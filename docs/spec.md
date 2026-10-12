@@ -1,6 +1,6 @@
 # Spur Gear: Specification
 
-Status: **Draft 0.5** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
+Status: **Draft 0.6** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
 Tests and code reference these IDs. Decisions are recorded in §11.
 
 Draft 0.3 replaces the sketch-constraint design of draft 0.2 with a custom feature that
@@ -122,13 +122,13 @@ it a solid.
 - **GEO-6** Backlash j_bn: each gear takes half of the mesh backlash as a reduction of tooth
   thickness, implemented by thickening the generating rack's teeth. The root diameter is
   unchanged.
-- **GEO-7** Print offset δ: the whole outline (flanks, root, tip) is offset by δ along its
-  normal; positive δ adds material. Gaps at convex corners are filled with arcs
-  of radius |δ|; overlaps are trimmed. The offset also applies to the bore and to the radial
-  edges of GEO-10, so a positive δ makes the bore smaller. The two flat faces
-  of the gear are not offset. The flank stays an exact involute (of the same base circle,
-  turned by δ / r_b) and the root curve the exact parallel of the trochoid. A bore that the
-  offset closes completely is left out.
+- **GEO-7** Print offset δ: the toothed profile (tip, flanks, root curves and root circle) is
+  offset by δ along its normal; positive δ adds material. Gaps at convex corners are filled
+  with arcs of radius |δ|; overlaps are trimmed. The flank stays an exact involute (of the
+  same base circle, turned by δ / r_b) and the root curve the exact parallel of the trochoid.
+  The offset does not apply to the bore, to the radial edges of GEO-10, or to the two flat
+  faces of the gear. In arc mode the radial edges stay on the ends of the arc and run from
+  the offset root circle.
 - **GEO-8** Each tooth is symmetric about its own tooth axis (a ray from the gear center).
 - **GEO-9** Tooth placement: tooth k's axis is at angle θ_ref + (p + k)·τ.
   - Circle: θ_ref is the X axis of the selected curve's sketch; all z teeth are generated.
@@ -195,9 +195,9 @@ it a solid.
 | VAL-7 | s_a < 0.2·m (rule of thumb) | warning |
 | VAL-8 | Undercut present (DER-7) | info |
 | VAL-10 | Thickness b ≤ 0 | error |
-| VAL-11 | Bore does not fit inside the root circle: d_B − 2δ ≥ d_f | error |
+| VAL-11 | Bore does not fit inside the root circle: d_B ≥ d_f | error |
 | VAL-12 | Operation is Join and the gear touches no body | error |
-| VAL-14 | The outline cannot be built: the print offset removes the root circle, folds the root curve back on itself, removes a flank, or (arc mode) cuts into the flank of an end tooth; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
+| VAL-14 | The outline cannot be built: the print offset removes the root circle, folds the root curve back on itself or removes a flank; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
 
 ## 10. Accuracy
 
@@ -228,11 +228,13 @@ Resolved on 2026-10-11, after the spikes:
 - **D-12** Operations are New Body and Join (IN-15).
 - **D-19** Join finds its bodies itself, like Fusion's own features; there is no target
   selection (FEA-6).
+- **D-20** The print offset applies only to the toothed profile, not to the bore or to the
+  radial edges of a sector gear (GEO-7, VAL-11). Replaces D-17.
 - **D-13** The add-in is self-contained and does not share a framework with other add-ins.
 - **D-14** No tooth-count limit or warning. A recompute took 1.6 s at z = 200 in the spike.
 - **D-15** Default thickness is 5 mm (IN-12).
 - **D-16** The side is chosen by a flip option; there is no symmetric option (IN-13).
-- **D-17** The print offset also applies to the bore and the radial edges (GEO-7, VAL-11).
+- **D-17** Superseded by D-20.
 - **D-18** The command is named "Spur Gear".
 
 ## 12. Feasibility

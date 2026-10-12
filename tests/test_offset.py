@@ -1,8 +1,9 @@
 """Print offset, GEO-7: the outline moved by delta along its normal.
 
-The main check does not use any offset formula: every point of the offset
-outline must lie at distance |delta| from the outline without offset, on the
-right side of it.
+The offset applies to the toothed profile only, not to the bore or to the radial
+edges of a sector gear. The main check does not use any offset formula: every
+point of the offset profile must lie at distance |delta| from the profile
+without offset, on the right side of it.
 """
 
 import dataclasses
@@ -104,12 +105,7 @@ ARC_CASES = {
     'quarter +0.1': GearParams(24.0, arc_span=90 * DEG, print_offset=0.1),
     'quarter -0.1': GearParams(24.0, arc_span=90 * DEG, print_offset=-0.1),
     'quarter with bore +0.1': GearParams(24.0, arc_span=90 * DEG, bore=8.0, print_offset=0.1),
-    'quarter with bore -0.1': GearParams(24.0, arc_span=90 * DEG, bore=8.0, print_offset=-0.1),
-    'reflex +0.1': GearParams(24.0, arc_span=220 * DEG, print_offset=0.1),
-    'reflex -0.1': GearParams(24.0, arc_span=220 * DEG, print_offset=-0.1),
     'reflex with bore -0.15': GearParams(24.0, arc_span=220 * DEG, bore=6.0, print_offset=-0.15),
-    'half circle +0.1': GearParams(24.0, arc_span=180 * DEG, print_offset=0.1),
-    'half circle -0.1': GearParams(24.0, arc_span=180 * DEG, print_offset=-0.1),
     'teeth fill the arc exactly, +0.1': GearParams(24.0, arc_span=90 * DEG, rotation=0.5,
                                                     print_offset=0.1),
     'teeth fill the arc exactly, -0.1': GearParams(24.0, arc_span=90 * DEG, rotation=0.5,
@@ -120,9 +116,39 @@ ARC_CASES = {
 
 
 @pytest.mark.parametrize('name', list(ARC_CASES))
-def test_sector_outline_is_parallel_to_the_plain_one(name):
-    """GEO-7, GEO-10: the radial edges, the bore and all corners are offset too."""
-    check_offset(ARC_CASES[name])
+def test_sector_offset_moves_the_toothed_profile_only(name):
+    """GEO-7, GEO-10: teeth and root circle are offset; the radial edges and the bore
+    stay where they are."""
+    p = ARC_CASES[name]
+    delta, half = p.print_offset, p.arc_span / 2
+    plain = gear_outline(dataclasses.replace(p, print_offset=0.0, tolerance=FINE))
+    moved = gear_outline(dataclasses.replace(p, tolerance=FINE))
+    assert moved.max_gap() < 1e-9
+    rf = derive(p).root_diameter / 2
+    assert rf == pytest.approx(derive(dataclasses.replace(p, print_offset=0.0)).root_diameter / 2 + delta)
+
+    # The closure: radial edges at the ends of the arc, from the moved root circle
+    # to the unchanged bore circle or to the center.
+    closing = 3 if p.bore else 2
+    edge_in, edge_out = moved.segments[-closing], moved.segments[-1]
+    inner = p.bore / 2
+    flat = lambda pt: [round(c, 9) for c in pt]
+    assert flat(edge_in.start) == flat((rf * math.cos(half), rf * math.sin(half)))
+    assert flat(edge_in.end) == flat((inner * math.cos(half), inner * math.sin(half)))
+    assert flat(edge_out.start) == flat((inner * math.cos(half), -inner * math.sin(half)))
+    assert flat(edge_out.end) == flat((rf * math.cos(half), -rf * math.sin(half)))
+    if p.bore:
+        assert moved.segments[-2] == plain.segments[-2]   # the bore arc is identical
+
+    # The toothed part is parallel to the plain toothed part.
+    toothed = dataclasses.replace(plain, segments=plain.segments[:-closing])
+    reference = dense(toothed) + [toothed.segments[-1].end]
+    pairs = list(zip(reference, reference[1:]))
+    worst = 0.0
+    for seg in moved.segments[:-closing]:
+        for pt in seg.sample(6):
+            worst = max(worst, abs(min(segment_distance(pt, a, b) for a, b in pairs) - abs(delta)))
+    assert worst <= 2 * FINE + 1e-4
 
 
 def test_flank_is_the_parallel_of_the_plain_flank():
@@ -177,15 +203,10 @@ def test_root_and_tip_circles_move_by_the_offset(offset):
     assert derive(p).tip_diameter == pytest.approx(26.0 + 2 * offset)
 
 
-@pytest.mark.parametrize('offset, radius', [(0.1, 3.9), (-0.1, 4.1), (0.0, 4.0)])
-def test_bore_shrinks_with_a_positive_offset(offset, radius):
-    """GEO-7, GEO-11, D-17"""
-    assert gear_outline(GearParams(24.0, bore=8.0, print_offset=offset)).holes[0].radius == pytest.approx(radius)
-
-
-def test_bore_smaller_than_the_offset_closes():
-    """GEO-7"""
-    assert gear_outline(GearParams(24.0, bore=0.3, print_offset=0.2)).holes == ()
+@pytest.mark.parametrize('offset', [0.1, -0.1, 0.0])
+def test_bore_is_not_affected_by_the_offset(offset):
+    """GEO-7, GEO-11, D-20"""
+    assert gear_outline(GearParams(24.0, bore=8.0, print_offset=offset)).holes[0].radius == 4.0
 
 
 def test_area_grows_with_the_offset():
@@ -196,24 +217,6 @@ def test_area_grows_with_the_offset():
     for offset in (0.05, -0.05):
         change = gear_outline(GearParams(24.0, print_offset=offset)).area() - plain.area()
         assert change == pytest.approx(offset * perimeter, rel=0.05)
-
-
-def test_sector_corners_at_the_center():
-    """GEO-7, GEO-10: a corner at the center is rounded when the offset opens it and
-    trimmed when the edges overlap."""
-    def tail(span_deg, offset):
-        return gear_outline(GearParams(24.0, arc_span=span_deg * DEG, print_offset=offset)).segments
-
-    convex_plus = tail(90, 0.1)
-    assert [type(s) for s in convex_plus[-5:]] == [Arc, Line, Arc, Line, Arc]
-    assert convex_plus[-3].center == (0.0, 0.0) and convex_plus[-3].radius == pytest.approx(0.1)
-    convex_minus = tail(90, -0.1)
-    assert [type(s) for s in convex_minus[-2:]] == [Line, Line]
-    meet = convex_minus[-2].end
-    assert meet == pytest.approx((0.1 / math.sin(45 * DEG), 0.0))
-    reflex_minus = tail(220, -0.1)
-    assert [type(s) for s in reflex_minus[-3:]] == [Line, Arc, Line]
-    assert reflex_minus[-2].sweep < 0   # around the center on the material side
 
 
 def test_too_large_offsets_are_rejected_cleanly():

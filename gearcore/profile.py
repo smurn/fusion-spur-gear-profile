@@ -4,7 +4,8 @@ Tooth frame: gear center at the origin, tooth axis along +X. The half-tooth is
 on the +Y side and runs from the tooth axis (angle 0) to the gap center
 (angle tau / 2): tip arc, flank (involute), root curve (trochoid), root arc.
 
-Print offset (GEO-7). Moving the outline by delta along its normal is the same
+Print offset (GEO-7). It applies to the toothed profile only: tip, flanks, root
+curves and root circle. Moving that profile by delta along its normal is the same
 as generating the gear with a rack that is shrunk by delta: the flank of the
 rack moves in by delta, its tip is lowered by delta and its tip fillet keeps
 its center and gets the radius rho - delta. The flank is then an involute of

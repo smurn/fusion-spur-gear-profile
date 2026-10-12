@@ -66,7 +66,7 @@ def validate(p: GearParams) -> list:
     elif d.tip_thickness < 0.2 * p.module:
         issues.append(Issue('VAL-7', WARNING, 'Thin tooth tips: {:.3f} mm is less than 0.2 x '
                             'module.'.format(d.tip_thickness)))
-    if p.bore > 0 and p.bore - 2 * p.print_offset >= d.root_diameter:
+    if p.bore > 0 and p.bore >= d.root_diameter:
         issues.append(Issue('VAL-11', ERROR, 'The bore does not fit inside the root circle.'))
     if d.undercut:
         issues.append(Issue('VAL-8', INFO, 'Undercut: {} teeth is below the limit of {:.1f}.'.format(

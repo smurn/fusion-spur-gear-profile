@@ -24,7 +24,7 @@ def test_defaults_are_valid():
     (GearParams(24.0, fillet=0.5), 'VAL-5'),
     (GearParams(24.0, thickness=0.0), 'VAL-10'),
     (GearParams(24.0, bore=21.5), 'VAL-11'),
-    (GearParams(24.0, bore=21.4, print_offset=-0.1), 'VAL-11'),   # a negative offset widens the bore
+    (GearParams(24.0, bore=21.4, print_offset=-0.1), 'VAL-11'),   # the root circle shrinks to 21.3
     (GearParams(0.0), 'IN-1'),
     (GearParams(24.0, arc_span=0.0), 'IN-1'),
     (GearParams(24.0, module=0.0), 'IN-2'),
