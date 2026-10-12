@@ -258,7 +258,10 @@ class SpurGearFeature:
         if self._editing:
             if self._editing.customNamedValues.value('operation') == JOIN:
                 return ''   # already joined; the combine keeps its bodies
-            own_body = base_feature(self._editing).bodies.item(0)
+            # The gear's own body must not count as something to join to. It is
+            # missing here if a later feature has consumed it.
+            bodies = base_feature(self._editing).bodies
+            own_body = bodies.item(0) if bodies.count else None
         component = geometry.native(settings.curve).parentSketch.parentComponent
         envelope = geometry.envelope_body(
             ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
@@ -402,10 +405,16 @@ class SpurGearFeature:
         base = base_feature(feature)
         combines = [f for f in feature.features
                     if f.objectType == adsk.fusion.CombineFeature.classType()]
-        log('changing {} to {}'.format(feature.name, operation))
+        timeline = design().timeline
+        log('changing {} to {}: marker {} of {}, {} combine(s)'.format(
+            feature.name, operation, timeline.markerPosition, timeline.count, len(combines)))
         feature.setStartAndEndFeatures(None, None)
+        log('  ungrouped: marker {} of {}, base feature at {}'.format(
+            timeline.markerPosition, timeline.count, base.timelineObject.index))
         if operation == JOIN:
             base.timelineObject.rollTo(False)   # the combine goes right after the base feature
+            log('  rolled to after the base feature: marker {}, base has {} bodies'.format(
+                timeline.markerPosition, base.bodies.count))
             last = self._join(feature.parentComponent, base)
         else:
             for combine in combines:
@@ -413,6 +422,8 @@ class SpurGearFeature:
             last = base
         feature.setStartAndEndFeatures(base, last)
         feature.customNamedValues.addOrSetValue('operation', operation)
+        log('  regrouped: marker {} of {}, feature holds {}'.format(
+            timeline.markerPosition, timeline.count, [f.name for f in feature.features]))
 
     @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):
