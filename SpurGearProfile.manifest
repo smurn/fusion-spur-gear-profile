@@ -4,7 +4,7 @@
 	"id": "9f40ce24-ab17-4b09-a38a-bb81e589a3f4",
 	"author": "Stefan",
 	"description": {
-		"": "Generates involute spur gear profiles as sketches."
+		"": "Creates solid involute spur gears from sketch circles and arcs."
 	},
 	"version": "0.9.0",
 	"runOnStartup": true,
