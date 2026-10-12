@@ -4,9 +4,9 @@ An Autodesk Fusion add-in that turns a sketch circle or arc into a solid involut
 The gear is one feature in the timeline and stays attached to its curve: move or resize the
 curve, or change a parameter, and the gear is recomputed.
 
-**Status:** in development. Full and sector gears work, with undercut, profile shift,
-backlash, a print offset and an optional bore, as New Body or Join. The specification is in
-[docs/spec.md](docs/spec.md).
+It makes full gears from circles and sector gears from arcs, with undercut, profile shift,
+backlash, a print offset and an optional bore, as a new body or joined to the bodies it
+touches. The specification is in [docs/spec.md](docs/spec.md).
 
 The add-in uses Fusion's custom feature API, which Autodesk marks as a preview.
 
@@ -24,7 +24,40 @@ Fusion needs the folder to be named `SpurGearProfile`, matching the `.manifest` 
 2. In Fusion, open **UTILITIES > ADD-INS > Scripts and Add-Ins**, select **SpurGearProfile**, and click **Run**.
 3. The **Spur Gear** button appears under **SOLID > CREATE**.
 
-The add-in must be running for gears to recompute.
+The add-in is set to run on startup. It must be running for gears to recompute. A design
+opened without it shows each gear as last computed.
+
+## Use
+
+1. Sketch a circle of roughly the pitch diameter you want, or an arc for a sector gear, and
+   finish the sketch.
+2. Start **SOLID > CREATE > Spur Gear** and pick the circle or arc.
+3. Set the **Module**. The tooth count is the curve's diameter divided by the module, rounded;
+   the info box at the bottom shows it together with the resulting diameters. The gear's
+   reference diameter is module times tooth count, so it usually differs a little from the
+   curve you drew.
+4. Set **Thickness**, and a **Bore diameter** if you want a hole. **Flip side** puts the gear
+   on the other side of the sketch plane.
+5. Choose the **Operation**: New Body, or Join to merge the gear into every body it touches.
+6. OK. The gear appears as one "Spur Gear" feature in the timeline.
+
+Other inputs:
+
+- **Start rotation** turns the teeth, from 0 to 100 % of one tooth pitch.
+- **Profile shift** and **Backlash** are the usual gear terms; backlash is the normal backlash
+  of the mesh, of which this gear takes half.
+- **Print offset** moves the tooth profile outward (positive) or inward (negative), to
+  compensate for a 3D printer. It does not change the bore.
+- **Advanced** holds the pressure angle, the addendum, dedendum and root fillet coefficients
+  of the generating rack (ISO 53 type A by default), and the largest allowed deviation of the
+  fitted curves from the exact tooth shape.
+
+To change a gear later, edit its sketch, change its values under **Modify > Change
+Parameters**, or double-click the feature in the timeline to open the dialog again. Fusion
+offers the dialog only in hybrid and assembly designs, not in part designs.
+
+Gears with few teeth are undercut, as a real rack-cut gear would be; the info box says so. A
+positive profile shift avoids it.
 
 ## Development
 
@@ -32,6 +65,7 @@ The add-in must be running for gears to recompute.
   repository root.
 - `fusion_layer/` is the Fusion side. It is checked by hand with
   [docs/manual-tests.md](docs/manual-tests.md).
+- `tools/make_icons.py` draws the icons in `resources/`.
 - `spikes/` holds the throwaway feasibility code behind [docs/spikes.md](docs/spikes.md).
 - [docs/custom-feature-notes.md](docs/custom-feature-notes.md) collects what we learned about
   Fusion's custom feature API. It is written to be useful for other add-ins too.
