@@ -243,7 +243,8 @@ The spikes are done; results are in [spikes.md](spikes.md). The custom feature d
 tested in SPIKE-5. The points it left open were checked by hand on the first working version
 of the add-in (2026-10-11):
 
-- **CHK-1** The edit dialog (FEA-7): works, in Hybrid designs only (FEA-11). The timeline is
+- **CHK-1** The edit dialog (FEA-7): works, including switching between New Body and Join, in
+  Hybrid designs only (FEA-11). The timeline is
   rolled back only while a change is applied, not for as long as the dialog is open; rolling
   it back for the whole edit hid the gear and broke Undo.
 - **CHK-2** Undo and redo of create and edit (UI-6): work, one step each.

@@ -408,18 +408,11 @@ class SpurGearFeature:
         base = base_feature(feature)
         combines = [f for f in feature.features
                     if f.objectType == adsk.fusion.CombineFeature.classType()]
-        timeline = design().timeline
-        log('changing {} to {}: marker {} of {}, {} combine(s)'.format(
-            feature.name, operation, timeline.markerPosition, timeline.count, len(combines)))
         feature.setStartAndEndFeatures(None, None)
-        log('  ungrouped: marker {} of {}, base feature at {}'.format(
-            timeline.markerPosition, timeline.count, base.timelineObject.index))
         last = base
         try:
             if operation == JOIN:
                 base.timelineObject.rollTo(False)   # the combine goes right after the base feature
-                log('  rolled to after the base feature: marker {}, base has {} bodies'.format(
-                    timeline.markerPosition, base.bodies.count))
                 last = self._join(feature.parentComponent, base)
             else:
                 for combine in combines:
@@ -433,8 +426,6 @@ class SpurGearFeature:
             feature.timelineObject.rollTo(True)
             feature.setStartAndEndFeatures(base, last)
         feature.customNamedValues.addOrSetValue('operation', operation)
-        log('  regrouped: marker {} of {}, feature holds {}'.format(
-            timeline.markerPosition, timeline.count, [f.name for f in feature.features]))
 
     @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):

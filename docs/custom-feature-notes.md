@@ -167,6 +167,25 @@ A feature can only be changed while the timeline marker is before it. Three ways
 With the third approach the user can pick an entity that was created after the feature. That
 cannot be a dependency and fails when applied.
 
+## Changing which features a custom feature contains
+
+Needed here to switch a gear between New Body and Join, which adds or removes the combine.
+(Confirmed)
+
+- The features inside a custom feature are not separate timeline items, so the marker cannot
+  be placed between them. Take them out first: with the marker before the custom feature,
+  call `feature.setStartAndEndFeatures(None, None)`. The custom feature stays as an empty
+  item and its former contents become ordinary timeline items after it.
+- Now the marker can go between them: `base.timelineObject.rollTo(False)` puts it right after
+  the base feature, where a new combine is then created. Deleting a contained feature works
+  the same way.
+- **Roll back before regrouping.** `setStartAndEndFeatures(base, last)` fails with "Didn't roll
+  editing feature back" unless the marker is before the custom feature again
+  (`feature.timelineObject.rollTo(True)`).
+- Regroup in a `finally` block. If the change fails halfway and the features are not put back,
+  the custom feature is left empty and everything that looks for its base feature breaks.
+- Done inside `execute`, the whole switch is one undo step, and it also works in the preview.
+
 ## Preview
 
 - `executePreview` runs the same code as `execute`; Fusion undoes whatever it changed.
