@@ -45,6 +45,17 @@ custom features (FEA-11).
 15. Open the edit dialog, pick a different circle (draw a second one first), OK. The gear
     moves to the new circle and follows it afterwards.
 
+## Changing the operation (FEA-7)
+
+15a. Create a New Body gear on a circle that sits on a plate. Edit it and set Operation to
+    Join. The preview shows it fused to the plate. OK. The body count drops by one and the
+    timeline still shows one Spur Gear feature. Move the circle: the gear follows.
+15b. Edit that gear and set Operation back to New Body. The gear is a separate body again
+    and the plate is whole.
+15c. Undo once after each of the two changes: the previous state returns.
+15d. Edit a New Body gear whose circle touches no body and choose Join: the info box says
+    there is nothing to join to and OK is disabled.
+
 ## Undo and redo (CHK-2, UI-6)
 
 16. Create a gear, then Undo once. The gear and its timeline node are gone. Redo brings it back.

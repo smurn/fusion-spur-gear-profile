@@ -76,6 +76,12 @@ def to_gear_params(frame: geometry.Frame, values: dict) -> gearcore.GearParams:
         tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'))
 
 
+def base_feature(feature: adsk.fusion.CustomFeature) -> adsk.fusion.BaseFeature:
+    """The base feature that holds the gear body."""
+    return next(f for f in feature.features
+                if f.objectType == adsk.fusion.BaseFeature.classType())
+
+
 class NothingToJoin(gearcore.GearError):
     """Operation is Join and the gear touches no body (VAL-12)."""
 
@@ -207,9 +213,6 @@ class SpurGearFeature:
         current = feature.customNamedValues.value('operation') if feature else NEW_BODY
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
-        if feature:
-            # Not yet editable: changing it means restructuring the feature.
-            operation.isEnabled = False
 
         flip = feature.customNamedValues.value('flip') == '1' if feature else False
         inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
@@ -249,12 +252,17 @@ class SpurGearFeature:
         """VAL-12, checked without building the gear: if not even a cylinder of the
         tip diameter touches a body, there is nothing to join to. A gear that
         misses a body only between its teeth is caught when it is created."""
-        if settings.operation != JOIN or self._editing or ev.outline is None:
+        if settings.operation != JOIN or ev.outline is None:
             return ''
+        own_body = None
+        if self._editing:
+            if self._editing.customNamedValues.value('operation') == JOIN:
+                return ''   # already joined; the combine keeps its bodies
+            own_body = base_feature(self._editing).bodies.item(0)
         component = geometry.native(settings.curve).parentSketch.parentComponent
         envelope = geometry.envelope_body(
             ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
-        if geometry.touching_bodies(component, envelope):
+        if geometry.touching_bodies(component, envelope, ignore=own_body):
             return ''
         return NOTHING_TO_JOIN
 
@@ -326,11 +334,11 @@ class SpurGearFeature:
         settings = self._read(args.command.commandInputs)
         if settings is None:
             raise RuntimeError('The inputs are not valid.')
-        if self._editing:
-            self._apply_edit(self._editing, settings)
-            return
         try:
-            self._create(settings)
+            if self._editing:
+                self._apply_edit(self._editing, settings)
+            else:
+                self._create(settings)
         except NothingToJoin as e:
             ui.messageBox(str(e), NAME)
 
@@ -351,19 +359,11 @@ class SpurGearFeature:
             base.finishEdit()
         last = base
         if settings.operation == JOIN:
-            # Like Extrude, Join merges the gear into every body it touches (FEA-6).
-            gear = base.bodies.item(0)
-            targets = geometry.touching_bodies(component, gear)
-            if not targets:
+            try:
+                last = self._join(component, base)
+            except NothingToJoin:
                 base.deleteMe()
-                raise NothingToJoin(NOTHING_TO_JOIN)   # VAL-12
-            tools = adsk.core.ObjectCollection.create()
-            tools.add(gear)
-            for other in targets[1:]:
-                tools.add(other)
-            combine = features.combineFeatures.createInput(targets[0], tools)
-            combine.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
-            last = features.combineFeatures.add(combine)
+                raise
 
         inp = features.customFeatures.createInput(self._definition)
         for pid, label, kind, _ in PARAMS:
@@ -375,6 +375,44 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         self._set_dependencies(feature, settings)
         return feature
+
+    @staticmethod
+    def _join(component: adsk.fusion.Component, base: adsk.fusion.BaseFeature):
+        """Add the combine that merges the gear into every body it touches, like
+        Extrude does (FEA-6). It is created at the timeline marker."""
+        gear = base.bodies.item(0)
+        targets = geometry.touching_bodies(component, gear)
+        if not targets:
+            raise NothingToJoin(NOTHING_TO_JOIN)   # VAL-12
+        tools = adsk.core.ObjectCollection.create()
+        tools.add(gear)
+        for other in targets[1:]:
+            tools.add(other)
+        combine = component.features.combineFeatures.createInput(targets[0], tools)
+        combine.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+        return component.features.combineFeatures.add(combine)
+
+    def _change_operation(self, feature: adsk.fusion.CustomFeature, operation: str):
+        """Switch an existing gear between New Body and Join (FEA-7). Called with
+        the timeline before the feature.
+
+        The features inside a custom feature cannot be reached in the timeline, so
+        they are taken out of it, changed, and put back, as Autodesk's manual
+        suggests."""
+        base = base_feature(feature)
+        combines = [f for f in feature.features
+                    if f.objectType == adsk.fusion.CombineFeature.classType()]
+        log('changing {} to {}'.format(feature.name, operation))
+        feature.setStartAndEndFeatures(None, None)
+        if operation == JOIN:
+            base.timelineObject.rollTo(False)   # the combine goes right after the base feature
+            last = self._join(feature.parentComponent, base)
+        else:
+            for combine in combines:
+                combine.deleteMe()
+            last = base
+        feature.setStartAndEndFeatures(base, last)
+        feature.customNamedValues.addOrSetValue('operation', operation)
 
     @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):
@@ -433,6 +471,8 @@ class SpurGearFeature:
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
             self._set_dependencies(feature, settings)
             self._recompute(feature)
+            if settings.operation != feature.customNamedValues.value('operation'):
+                self._change_operation(feature, settings.operation)
         finally:
             if resume_at is not None:
                 resume_at.rollTo(False)
@@ -449,8 +489,7 @@ class SpurGearFeature:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))
         flip = feature.customNamedValues.value('flip') == '1'
-        base = next(f for f in feature.features
-                    if f.objectType == adsk.fusion.BaseFeature.classType())
+        base = base_feature(feature)
         component = feature.parentComponent
         base.startEdit()
         try:

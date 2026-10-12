@@ -79,7 +79,8 @@ def source_bodies(base: adsk.fusion.BaseFeature) -> list:
         return [base.bodies.item(i) for i in range(base.bodies.count)]
 
 
-def touching_bodies(component: adsk.fusion.Component, tool: adsk.fusion.BRepBody) -> list:
+def touching_bodies(component: adsk.fusion.Component, tool: adsk.fusion.BRepBody,
+                    ignore: typing.Optional[adsk.fusion.BRepBody] = None) -> list:
     """Visible solid bodies of the component that the tool touches or overlaps.
     These are the bodies Join merges the gear into, as Extrude does (FEA-6)."""
     manager = adsk.fusion.TemporaryBRepManager.get()
@@ -87,7 +88,7 @@ def touching_bodies(component: adsk.fusion.Component, tool: adsk.fusion.BRepBody
     found = []
     for i in range(component.bRepBodies.count):
         body = component.bRepBodies.item(i)
-        if body == tool or not body.isSolid or not body.isVisible:
+        if body == tool or body == ignore or not body.isSolid or not body.isVisible:
             continue
         if not body.boundingBox.intersects(tool.boundingBox):
             continue
