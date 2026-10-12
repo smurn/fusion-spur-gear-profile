@@ -25,6 +25,9 @@ CASES = {
     'undercut, sharp corner': GearParams(10.0, fillet=0.0),
     'undercut alpha 14.5': GearParams(24.0, pressure_angle=math.radians(14.5)),
     'barely undercut z17': GearParams(17.0),
+    'large shift, fillet center outside the reference circle': GearParams(24.0, profile_shift=1.0),
+    'very large shift z100': GearParams(100.0, profile_shift=1.5),
+    'shift just past the fillet center limit': GearParams(40.0, profile_shift=0.9),
 }
 
 

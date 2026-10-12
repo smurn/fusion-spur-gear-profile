@@ -51,6 +51,7 @@ def test_errors(params, issue):
     GearParams(24.0, tolerance=0.0001),
     GearParams(24.0, tolerance=0.1),
     GearParams(24.0, bore=21.4),
+    GearParams(100.0, profile_shift=1.2),
 ])
 def test_range_limits_are_inclusive(params):
     assert errors(params) == []

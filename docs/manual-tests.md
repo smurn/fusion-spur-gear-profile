@@ -1,8 +1,6 @@
 # Manual tests
 
 Checklist for the Fusion layer (TST-3). Run the add-in from Scripts and Add-Ins first.
-Print offset is not implemented yet: a non-zero value shows "Not supported yet" and disables
-OK.
 
 Record the result of each item as pass or fail, with a note on what happened.
 
@@ -87,6 +85,19 @@ custom features (FEA-11).
     pitch: the feature fails and keeps its previous body.
 32. Set Start rotation to 50 on the sector gear. The teeth shift by half a pitch and the count
     may change by one.
+
+## Print offset (GEO-7)
+
+33. Create a 24-tooth gear with Bore diameter 8 mm. Edit it and set Print offset to 0.2 mm.
+    The teeth get fatter, the tip corners become rounded, and the bore shrinks to 7.6 mm.
+    Measure the tip diameter: 26.4 mm.
+34. Set Print offset to -0.2 mm. The teeth get thinner, the tip corners are sharp, the bore
+    grows to 8.4 mm and the tip diameter is 25.6 mm.
+35. On a 10-tooth gear (undercut), try Print offset 0.1 mm and -0.1 mm. Both build.
+36. On a sector gear with a bore, try Print offset 0.2 mm and -0.2 mm. With 0.2 mm all four
+    corners of the sector are rounded and the straight edges move outward; with -0.2 mm the
+    corners are sharp and the edges move inward.
+37. Set Print offset to 3 mm on any gear. The info box reports an error and OK is disabled.
 
 ## Save and reopen (CHK-3, FEA-9)
 

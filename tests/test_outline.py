@@ -132,11 +132,6 @@ def test_invalid_parameters_raise():
         gear_outline(GearParams(2.0))
 
 
-def test_print_offset_is_not_silently_ignored():
-    with pytest.raises(NotImplementedError, match='print offset'):
-        gear_outline(dataclasses.replace(GearParams(24.0), print_offset=0.1))
-
-
 def test_undercut_makes_the_tooth_root_thinner():
     """GEO-4: with undercut, the outline at the base circle is narrower than the
     involute alone would make it."""

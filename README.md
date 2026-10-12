@@ -4,9 +4,9 @@ An Autodesk Fusion add-in that turns a sketch circle or arc into a solid involut
 The gear is one feature in the timeline and stays attached to its curve: move or resize the
 curve, or change a parameter, and the gear is recomputed.
 
-**Status:** in development. Full and sector gears work, with undercut and an optional bore, as
-New Body or Join. Print offset is not implemented yet; the dialog says so and disables OK.
-The specification is in [docs/spec.md](docs/spec.md).
+**Status:** in development. Full and sector gears work, with undercut, profile shift,
+backlash, a print offset and an optional bore, as New Body or Join. The specification is in
+[docs/spec.md](docs/spec.md).
 
 The add-in uses Fusion's custom feature API, which Autodesk marks as a preview.
 

@@ -1,6 +1,6 @@
 # Spur Gear: Specification
 
-Status: **Draft 0.4** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
+Status: **Draft 0.5** (2026-10-11). Requirements have stable IDs (`GEO-3`, `FEA-5`, …).
 Tests and code reference these IDs. Decisions are recorded in §11.
 
 Draft 0.3 replaces the sketch-constraint design of draft 0.2 with a custom feature that
@@ -126,7 +126,9 @@ it a solid.
   normal; positive δ adds material. Gaps at convex corners are filled with arcs
   of radius |δ|; overlaps are trimmed. The offset also applies to the bore and to the radial
   edges of GEO-10, so a positive δ makes the bore smaller. The two flat faces
-  of the gear are not offset.
+  of the gear are not offset. The flank stays an exact involute (of the same base circle,
+  turned by δ / r_b) and the root curve the exact parallel of the trochoid. A bore that the
+  offset closes completely is left out.
 - **GEO-8** Each tooth is symmetric about its own tooth axis (a ray from the gear center).
 - **GEO-9** Tooth placement: tooth k's axis is at angle θ_ref + (p + k)·τ.
   - Circle: θ_ref is the X axis of the selected curve's sketch; all z teeth are generated.
@@ -195,6 +197,7 @@ it a solid.
 | VAL-10 | Thickness b ≤ 0 | error |
 | VAL-11 | Bore does not fit inside the root circle: d_B − 2δ ≥ d_f | error |
 | VAL-12 | Operation is Join and the gear touches no body | error |
+| VAL-14 | The outline cannot be built: the print offset removes the root circle, folds the root curve back on itself, removes a flank, or (arc mode) cuts into the flank of an end tooth; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
 
 ## 10. Accuracy
 
@@ -247,7 +250,7 @@ of the add-in (2026-10-11):
   add-in starts again, a recompute picks up the changes.
 - **CHK-4** A curve on a tilted offset plane, on a planar face, and inside a component
   (FEA-10): works.
-- **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): not yet confirmed.
+- **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): works.
 - **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
 
 ## 13. Architecture and testing
@@ -268,7 +271,9 @@ of the add-in (2026-10-11):
 - **TST-2** Reference checks include: DER formulas against hand-calculated values;
   undercut threshold z ≈ 17 for type A; tooth symmetry; involute points lying on the base
   circle involute; ACC-1 by sampling; s at the reference circle matching DER-6; the outline
-  being closed (ACC-3); the enclosed area in arc mode and with a bore.
+  being closed (ACC-3); the enclosed area in arc mode and with a bore; the tooth outline
+  against an independent model of the generating rack, including undercut; the offset outline
+  lying at distance |δ| from the outline without offset.
 - **TST-3** The Fusion layer is verified with a manual checklist in `docs/manual-tests.md`,
   one item per FEA and UI requirement and per CHK item.
 

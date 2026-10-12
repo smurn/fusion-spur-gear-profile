@@ -57,7 +57,13 @@ def derive(p: GearParams) -> Derived:
     s = m * (math.pi / 2 + 2 * x * math.tan(a)) - p.backlash / (2 * math.cos(a))
     z_min = 2 * (p.dedendum - p.fillet * (1 - math.sin(a)) - x) / math.sin(a) ** 2
     s_a = None
-    if z > 0 and d_a > d_b > 0:
+    if delta > 0:
+        # A positive offset rounds the tip corners (GEO-7); the tip arc keeps the
+        # angle it has without offset and only moves out.
+        plain = derive(dataclasses.replace(p, print_offset=0.0)).tip_thickness
+        if plain is not None:
+            s_a = plain * d_a / (d_a - 2 * delta)
+    elif z > 0 and d_a > d_b > 0:
         # A curve parallel to an involute at distance delta is an involute of the
         # same base circle, turned by delta / r_b. That is the adjustment for delta.
         s_a = d_a * (s / d + inv(a) - inv(math.acos(d_b / d_a)) + 2 * delta / d_b)

@@ -128,7 +128,8 @@ def test_backlash_thins_the_tooth_but_keeps_the_root(case):
     import dataclasses
     more = ToothProfile(dataclasses.replace(p, backlash=p.backlash + 0.1))
     assert more.rf == tooth.rf
-    assert more.psi < tooth.psi
+    at_reference = math.tan(p.pressure_angle)
+    assert more.involute(at_reference)[1] < tooth.involute(at_reference)[1]
     assert more.tip_angle < tooth.tip_angle
 
 

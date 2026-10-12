@@ -110,10 +110,8 @@ def evaluate(curve, values: dict) -> Evaluation:
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
         try:
             ev.outline = gearcore.gear_outline(ev.params)
-        except NotImplementedError as e:
-            ev.issues.append(gearcore.Issue('TODO', gearcore.ERROR, 'Not supported yet: {}.'.format(e)))
-        except gearcore.GearError as e:
-            ev.issues.append(gearcore.Issue('GEO', gearcore.ERROR, str(e)))
+        except gearcore.GearError as e:   # VAL-14: only found while building the outline
+            ev.issues.append(gearcore.Issue('VAL-14', gearcore.ERROR, str(e)))
     return ev
 
 
