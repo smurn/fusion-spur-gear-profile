@@ -260,8 +260,11 @@ class SpurGearFeature:
                 return ''   # already joined; the combine keeps its bodies
             # The gear's own body must not count as something to join to. It is
             # missing here if a later feature has consumed it.
-            bodies = base_feature(self._editing).bodies
-            own_body = bodies.item(0) if bodies.count else None
+            try:
+                bodies = base_feature(self._editing).bodies
+                own_body = bodies.item(0) if bodies.count else None
+            except (StopIteration, RuntimeError):
+                own_body = None
         component = geometry.native(settings.curve).parentSketch.parentComponent
         envelope = geometry.envelope_body(
             ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
@@ -411,16 +414,24 @@ class SpurGearFeature:
         feature.setStartAndEndFeatures(None, None)
         log('  ungrouped: marker {} of {}, base feature at {}'.format(
             timeline.markerPosition, timeline.count, base.timelineObject.index))
-        if operation == JOIN:
-            base.timelineObject.rollTo(False)   # the combine goes right after the base feature
-            log('  rolled to after the base feature: marker {}, base has {} bodies'.format(
-                timeline.markerPosition, base.bodies.count))
-            last = self._join(feature.parentComponent, base)
-        else:
-            for combine in combines:
-                combine.deleteMe()
-            last = base
-        feature.setStartAndEndFeatures(base, last)
+        last = base
+        try:
+            if operation == JOIN:
+                base.timelineObject.rollTo(False)   # the combine goes right after the base feature
+                log('  rolled to after the base feature: marker {}, base has {} bodies'.format(
+                    timeline.markerPosition, base.bodies.count))
+                last = self._join(feature.parentComponent, base)
+            else:
+                for combine in combines:
+                    combine.deleteMe()
+        except Exception:
+            last = combines[-1] if combines else base   # put it back as it was
+            raise
+        finally:
+            # Regrouping is refused ("Didn't roll editing feature back") unless the
+            # marker is before the custom feature again.
+            feature.timelineObject.rollTo(True)
+            feature.setStartAndEndFeatures(base, last)
         feature.customNamedValues.addOrSetValue('operation', operation)
         log('  regrouped: marker {} of {}, feature holds {}'.format(
             timeline.markerPosition, timeline.count, [f.name for f in feature.features]))
