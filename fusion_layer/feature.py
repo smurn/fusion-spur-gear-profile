@@ -45,6 +45,8 @@ PARAMS = (
     ('print_offset', 'Print offset', 'length', '0 mm'),
     ('tolerance', 'Max profile deviation', 'length', '0.01 mm'),
 )
+#: Inputs that are rarely changed. The dialog shows them in a collapsed group (UI-8).
+ADVANCED = ('pressure_angle', 'addendum', 'dedendum', 'fillet', 'tolerance')
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -56,6 +58,15 @@ def log(message: str):
 
 def design() -> adsk.fusion.Design:
     return adsk.fusion.Design.cast(app.activeProduct)
+
+
+def find_input(inputs: adsk.core.CommandInputs, input_id: str):
+    """A dialog input by id, whether it is at the top level or in the Advanced group."""
+    found = inputs.itemById(input_id)
+    if found is None:
+        group = adsk.core.GroupCommandInput.cast(inputs.itemById('advanced'))
+        found = group.children.itemById(input_id) if group else None
+    return found
 
 
 def unit(kind: str) -> str:
@@ -145,6 +156,9 @@ class SpurGearFeature:
         self._command_handlers = []  # kept while a dialog is open
         self._command = None
         self._editing: typing.Optional[adsk.fusion.CustomFeature] = None
+        #: Settings of the last gear created, to start the next one with (UI-7).
+        #: Kept in memory only.
+        self._last_used: dict = {}
 
         for cid, callback in ((CREATE_ID, self._on_create_created), (EDIT_ID, self._on_edit_created)):
             old = ui.commandDefinitions.itemById(cid)
@@ -210,15 +224,32 @@ class SpurGearFeature:
 
         operation = inputs.addDropDownCommandInput(
             'operation', 'Operation', adsk.core.DropDownStyles.TextListDropDownStyle)
-        current = feature.customNamedValues.value('operation') if feature else NEW_BODY
+        if feature:
+            current = feature.customNamedValues.value('operation')
+            flip = feature.customNamedValues.value('flip') == '1'
+        else:
+            current = self._last_used.get('operation', NEW_BODY)
+            flip = self._last_used.get('flip', False)
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
 
-        flip = feature.customNamedValues.value('flip') == '1' if feature else False
-        inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
+        # The common inputs first, the rarely changed ones in a group that is only
+        # open if one of them is not at its default (UI-8).
+        advanced = []
         for pid, label, kind, default in PARAMS:
-            expression = feature.parameters.itemById(pid).expression if feature else default
-            inputs.addValueInput(pid, label, unit(kind), adsk.core.ValueInput.createByString(expression))
+            if pid in ADVANCED:
+                advanced.append((pid, label, kind, default))
+                continue
+            inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
+            if pid == 'bore':
+                inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
+        group = inputs.addGroupCommandInput('advanced', 'Advanced')
+        changed = False
+        for pid, label, kind, default in advanced:
+            value, differs = self._initial(pid, kind, default)
+            group.children.addValueInput(pid, label, unit(kind), value)
+            changed = changed or differs
+        group.isExpanded = changed
         inputs.addTextBoxCommandInput('info', '', '', 7, True)
         self._update_dialog(inputs)
 
@@ -234,11 +265,30 @@ class SpurGearFeature:
         for event, base_class, callback in events:
             self._listen(event, base_class, callback, self._command_handlers)
 
+    def _initial(self, pid: str, kind: str, default: str):
+        """What a numeric input starts with, and whether that differs from its default:
+        the feature's value when editing, else the value used for the last gear
+        (UI-7), else the default."""
+        units = design().unitsManager
+        standard = units.evaluateExpression(default, unit(kind))
+        by_string = adsk.core.ValueInput.createByString
+        if self._editing:
+            parameter = self._editing.parameters.itemById(pid)
+            return by_string(parameter.expression), abs(parameter.value - standard) > 1e-9
+        if pid in self._last_used.get('params', {}):
+            expression, value = self._last_used['params'][pid]
+            differs = abs(value - standard) > 1e-9
+            # The expression may use a user parameter that this design does not have.
+            if units.isValidExpression(expression, unit(kind)):
+                return by_string(expression), differs
+            return adsk.core.ValueInput.createByReal(value), differs
+        return by_string(default), False
+
     def _read(self, inputs: adsk.core.CommandInputs) -> typing.Optional[Settings]:
         """The dialog's current settings, or None while a value cannot be evaluated."""
         expressions, values = {}, {}
         for pid, _, _, _ in PARAMS:
-            value_input = adsk.core.ValueCommandInput.cast(inputs.itemById(pid))
+            value_input = adsk.core.ValueCommandInput.cast(find_input(inputs, pid))
             if not value_input.isValidExpression:
                 return None
             expressions[pid], values[pid] = value_input.expression, value_input.value
@@ -343,8 +393,11 @@ class SpurGearFeature:
         try:
             if self._editing:
                 self._apply_edit(self._editing, settings)
-            else:
-                self._create(settings)
+            elif self._create(settings):
+                self._last_used = {
+                    'operation': settings.operation, 'flip': settings.flip,
+                    'params': {pid: (settings.expressions[pid], settings.values[pid])
+                               for pid, _, _, _ in PARAMS}}
         except NothingToJoin as e:
             ui.messageBox(str(e), NAME)
 

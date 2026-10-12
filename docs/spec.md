@@ -1,6 +1,6 @@
 # Spur Gear: Specification
 
-Status: **Version 0.7** (2026-10-11). It describes the add-in as implemented in version
+Status: **Version 0.8** (2026-10-11). It describes the add-in as implemented in version
 0.9.0. Requirements have stable IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these
 IDs. Decisions are recorded in §11.
 
@@ -200,6 +200,13 @@ it a solid.
 - **UI-5** OK is disabled while any VAL error is present. One case is only caught on OK, with
   a message: see VAL-12.
 - **UI-6** Creating a gear is a single undo step. So is each edit.
+- **UI-7** The create dialog starts with the inputs of the last gear that was created: all
+  numeric inputs (as entered, so references to user parameters are kept), flip side and
+  operation. The curve is not remembered. This lasts until the add-in is stopped; it is not
+  saved. If a remembered expression is not valid in the current design, its value is used.
+- **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
+  deviation are in a group named Advanced. It is collapsed unless one of them differs from
+  its default.
 
 ## 9. Validation
 
@@ -262,6 +269,8 @@ Resolved on 2026-10-11, after the spikes:
   selection (FEA-6).
 - **D-20** The print offset applies only to the toothed profile, not to the bore or to the
   radial edges of a sector gear (GEO-7, VAL-11). Replaces D-17.
+- **D-21** The dialog remembers the last used settings in memory only, and keeps the rarely
+  changed inputs in a collapsed group (UI-7, UI-8).
 
 ## 12. Feasibility
 
