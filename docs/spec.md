@@ -1,12 +1,15 @@
 # Spur Gear: Specification
 
-Status: **Version 0.8** (2026-10-11). It describes the add-in as implemented in version
-0.9.0. Requirements have stable IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these
-IDs. Decisions are recorded in §11.
+Status: **Draft 0.9** (2026-10-13). Version 0.8 describes the add-in as implemented in
+version 0.9.0. Draft 0.9 adds meshing with another gear ("Mesh with"), which is not
+implemented yet: IN-17, DER-10, DER-11, the mesh part of GEO-9, FEA-12 to FEA-14, UI-9,
+VAL-15 to VAL-18, D-22 to D-25, ARC-8 and the mesh check in TST-2. Requirements have stable
+IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §11.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
 that produces a solid body; the reasons are in [spikes.md](spikes.md). Draft 0.4 dropped the
 target body selection for Join. Draft 0.6 limited the print offset to the toothed profile.
+Draft 0.9 added "Mesh with", after SPIKE-6.
 Retired IDs: SKT-1 to SKT-12, IN-16, VAL-9, D-1, D-4, D-6, D-17, SPIKE-1 to SPIKE-4. VAL-13
 was never used.
 
@@ -26,11 +29,15 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 - Live preview while the dialog is open.
 - Editing all inputs after creation, through the feature's edit dialog or the parameters
   dialog.
+- Turning a gear so that it meshes with another gear, and checking their center distance.
 
 **Out of scope (v1)**
 - Helical, internal and bevel gears, racks, worms.
 - Tip relief and other flank modifications. The design must leave room to add them later.
-- Diametral pitch input, meshing pairs and center-distance calculation.
+- Diametral pitch input. Placing gears at the right center distance: the user draws the
+  curves; the add-in only reports the ideal distance (DER-10).
+- Gears fixed to each other on one shaft (compound gears): their relative rotation is set
+  with the start rotation.
 - The gear outline as sketch geometry.
 - Cutting the gear shape out of a body.
 - Keyways, spokes, hubs and chamfers. The user adds them with ordinary features.
@@ -52,12 +59,15 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | b | thickness (face width) |
 | d_B | bore diameter |
 | τ | angular pitch, 2π / z |
+| a, a_w | actual and ideal center distance to the mate (DER-10) |
+| z₁, z₂, x₁, x₂ | tooth counts and profile shifts of this gear and its mate |
 | inv(φ) | involute function, tan φ − φ |
 
 ## 3. User workflow
 
 1. The user clicks **Spur Gear** in SOLID › CREATE.
-2. The user selects one circle or arc in an existing sketch.
+2. The user selects one circle or arc in an existing sketch. Optionally, the user also
+   selects the curve of an existing gear that this one should mesh with.
 3. The dialog shows the inputs (§4) with defaults and the derived values (§5). A live preview
    of the body updates on every change.
 4. On **OK** the gear feature is added to the timeline. **Cancel** leaves the design unchanged.
@@ -83,6 +93,7 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-13 | Flip side | off | Off: the gear extends from the sketch plane along its normal. On: the opposite side |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
 | IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
+| IN-17 | Mesh with | none | Optional. The curve (IN-1) of another Spur Gear, the mate. When set, the rotation comes from DER-11 and IN-10 is not used (FEA-12) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -112,6 +123,20 @@ tooth thickness and the tip thickness. Undercut is reported through VAL-8.
   s_a is undefined if the tip circle lies inside the base circle (VAL-3).
 - **DER-9** Number of teeth that are generated (see GEO-9). For a circle this is z. The
   dialog shows it for arcs.
+- **DER-10** Center distance, with a mate (IN-17). The actual distance a is the distance
+  between the two curves' centers, measured in the mate's plane. The ideal distance a_w is
+  the one at which the two gears mesh without backlash:
+  inv α_w = inv α + 2·tan α·(x₁ + x₂) / (z₁ + z₂), a_w = m(z₁ + z₂)/2 · cos α / cos α_w.
+  Backlash and print offset are not included: with a = a_w the gears have the backlash j_bn
+  of IN-8. The dialog shows a and a_w.
+- **DER-11** Rotation, with a mate. Angles are measured in the mate's plane, counterclockwise
+  about its normal. β is the direction from the mate's center to this gear's center. θ_M is
+  the axis angle of the mate's tooth 0 (GEO-9; if the mate itself has a mate, from this
+  rule). With u = frac((β − θ_M) / τ_M), this gear's tooth 0 axis is
+  θ₀ = β + π − (½ − u)·τ. So a tooth of one gear on the line of centers faces a gap of the
+  other. The result holds for any profile shift, backlash and print offset, because each
+  tooth is symmetric (GEO-8). If this gear's plane normal points the other way, θ₀ is
+  converted into its own plane.
 
 ## 6. Geometry
 
@@ -143,11 +168,12 @@ it a solid.
   the offset root circle. Convex corners are the tip corners and, on an undercut tooth, the
   corner between flank and root curve.
 - **GEO-8** Each tooth is symmetric about its own tooth axis (a ray from the gear center).
-- **GEO-9** Tooth placement: tooth k's axis is at angle θ_ref + (p + k)·τ.
+- **GEO-9** Tooth placement: tooth k's axis is at angle θ₀ + k·τ, with θ₀ = θ_ref + p·τ, or
+  with θ₀ from DER-11 if the gear has a mate.
   - Circle: θ_ref is the X axis of the selected curve's sketch; all z teeth are generated.
   - Arc: θ_ref is the direction from the center to the arc's midpoint. Only teeth whose full
-    pitch unit (axis ± τ/2) lies within the arc are generated. With p = 0 the sector is
-    symmetric about the arc midpoint.
+    pitch unit (axis ± τ/2) lies within the arc are generated. With p = 0 and no mate the
+    sector is symmetric about the arc midpoint.
 - **GEO-10** Arc mode: the root circle continues from the outermost generated teeth to the
   arc's end angles. From there the outline is closed by two straight radial edges. They run
   to the bore circle, which closes the outline with an arc, or to the center if there is no
@@ -189,6 +215,15 @@ it a solid.
   designs, not in Part designs. This is a limitation of Fusion, also seen with other custom
   feature add-ins. In a Part design the gear is still created, recomputed and editable
   through the parameters dialog.
+- **FEA-12** With a mate (IN-17), the feature also depends on the mate's feature. It
+  recomputes whenever the mate does: when the mate's curve moves or changes, or any of the
+  mate's parameters change. This carries on along a chain of gears. While a mate is set, the
+  start rotation (IN-10) is not used.
+- **FEA-13** Deleting a gear also deletes every gear that meshes with it, directly or through
+  a chain. This is Fusion's behavior for a feature others depend on; Undo restores them. To
+  keep a gear, clear its "Mesh with" first.
+- **FEA-14** Clearing "Mesh with" in the edit dialog keeps the gear where it is: the start
+  rotation is set to the rotation the mate gave it.
 
 ## 8. Command and user interface
 
@@ -207,6 +242,10 @@ it a solid.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
   deviation are in a group named Advanced. It is collapsed unless one of them differs from
   its default.
+- **UI-9** "Mesh with" is an optional selection right after the curve. It accepts sketch
+  circles and arcs; VAL-15 checks that the curve belongs to a Spur Gear. While it is set, the
+  start rotation input is disabled, and the info box names the mate and shows the actual and
+  ideal center distance (DER-10). It is not remembered for the next gear (UI-7).
 
 ## 9. Validation
 
@@ -224,6 +263,11 @@ it a solid.
 | VAL-11 | Bore does not fit inside the root circle: d_B ≥ d_f | error |
 | VAL-12 | Operation is Join and the gear touches no body | error |
 | VAL-14 | The outline cannot be built: the print offset removes the root circle or folds the root curve back on itself; no flank remains between root curve and tip circle; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
+
+| VAL-15 | "Mesh with" is not the curve of a Spur Gear earlier in the timeline in the same component, or is this gear's own curve. If several gears use the curve, the latest one before this gear is the mate | error |
+| VAL-16 | Module or pressure angle differs from the mate's | error |
+| VAL-17 | The planes of the two curves are not parallel, or the centers coincide in the mate's plane | error |
+| VAL-18 | The center distance differs from the ideal one: \|a − a_w\| > 0.01·m | warning |
 
 A value outside the range given in §4 is an error and is reported with the ID of that input.
 
@@ -272,6 +316,16 @@ Resolved on 2026-10-11, after the spikes:
 - **D-21** The dialog remembers the last used settings in memory only, and keeps the rarely
   changed inputs in a collapsed group (UI-7, UI-8).
 
+Resolved on 2026-10-13, after SPIKE-6:
+
+- **D-22** Gears are aligned by picking the gear to mesh with (IN-17), not a reference line.
+  A line only aligns pairs; a mate also works along a chain of gears.
+- **D-23** A gear with a mate depends on the mate's custom feature. Depending on the mate's
+  parameters is rejected by Fusion, and depending on its body breaks recomputing (SPIKE-6).
+- **D-24** Deleting a gear deletes the gears meshing with it (FEA-13). Accepted.
+- **D-25** A wrong center distance is a warning, not an error (VAL-18). The add-in does not
+  move curves.
+
 ## 12. Feasibility
 
 The spikes are done; results are in [spikes.md](spikes.md). The custom feature design was
@@ -310,6 +364,10 @@ of the add-in (2026-10-11):
   applied, inside the command's own transaction (UI-6).
 - **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side and operation
   are stored with the feature as named values.
+- **ARC-8** The mate is stored as a dependency on its custom feature and as its entity token
+  in a named value, which is how the compute finds it. The compute works out DER-11 along the
+  whole chain each time and writes nothing to any feature: named values written during a
+  compute broke the feature in SPIKE-6. DER-10 and DER-11 are `gearcore` functions.
 - **TST-1** `gearcore` has pytest tests runnable outside Fusion. Each test names the requirement
   IDs it covers.
 - **TST-2** Reference checks include: DER formulas against hand-calculated values;
@@ -317,7 +375,9 @@ of the add-in (2026-10-11):
   circle involute; ACC-1 by sampling; s at the reference circle matching DER-6; the outline
   being closed (ACC-3); the enclosed area in arc mode and with a bore; the tooth outline
   against an independent model of the generating rack, including undercut; the offset outline
-  lying at distance |δ| from the outline without offset.
+  lying at distance |δ| from the outline without offset; two gears placed by DER-11 at the
+  ideal center distance touching when there is no backlash (overlap no deeper than the IN-11
+  tolerance), and with a clearance of j_bn/2 on each flank when there is.
 - **TST-3** The Fusion layer is verified with a manual checklist in `docs/manual-tests.md`
   that covers the FEA and UI requirements and the CHK items.
 
