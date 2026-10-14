@@ -52,7 +52,7 @@ VI = adsk.core.ValueInput
 JOIN = adsk.fusion.FeatureOperations.JoinFeatureOperation
 NEW_BODY = adsk.fusion.FeatureOperations.NewBodyFeatureOperation
 
-VARIANTS = ('feature', 'base', 'body', 'param', 'param-chain', 'circle', 'feature-join', 'body-join')
+VARIANTS = ('feature', 'feature-store', 'base', 'body', 'param', 'param-chain', 'circle', 'feature-join', 'body-join')
 
 _definition = None
 _handlers = []
@@ -205,14 +205,10 @@ class ComputeHandler(adsk.fusion.CustomFeatureEventHandler):
                 entry['updated'] = base.updateBody(old, marker(circle_of(feat), phase))
             finally:
                 base.finishEdit()
-            store_phase(feat, phase, entry)
-            tl = S['design'].timeline
-            entry['marker'] = '{}/{}'.format(tl.markerPosition, tl.count)
-            try:
-                xy = marker_xy(feat)
-                entry['body_after'] = None if xy is None else [round(xy[0], 3), round(xy[1], 3)]
-            except Exception as e:
-                entry['body_after'] = 'unreadable: {}'.format(e)
+            # Run 2: every compute that stored a value left the body unchanged and the
+            # feature in health state Unknown. Only the 'feature-store' chain stores now.
+            if feat.customNamedValues.isExistingValue('store'):
+                store_phase(feat, phase, entry)
         except Exception:
             entry['error'] = traceback.format_exc()
             try:
@@ -256,7 +252,7 @@ def add_dependencies(feat, deps):
     return out
 
 
-def create_feature(curve, name, mate=None, join_target=None):
+def create_feature(curve, name, mate=None, join_target=None, store=False):
     global _creating
     comp = curve.parentSketch.parentComponent
     _creating = True
@@ -285,6 +281,8 @@ def create_feature(curve, name, mate=None, join_target=None):
             feat.customNamedValues.addOrSetValue('mate', mate.entityToken)
             feat.customNamedValues.addOrSetValue('mate_name', mate.name)
         feat.customNamedValues.addOrSetValue('phase', repr(phase))
+        if store:
+            feat.customNamedValues.addOrSetValue('store', '1')
         return feat
     finally:
         _creating = False
@@ -471,10 +469,10 @@ def build_queue():
                     sk.profiles.item(0), VI.createByReal(-0.2), NEW_BODY).bodies.item(0)
             deps, prev = {}, None
             for k in 'ABC':
-                c = circle_sketch(root, '{} {}'.format(k, v), pos[k][0], pos[k][1], RADII[k])
+                c = circle_sketch(root, 'Sketch {} {}'.format(k, v), pos[k][0], pos[k][1], RADII[k])
                 st['sketches'][k] = c
                 name = '{} {}'.format(k, v)
-                feat = create_feature(c['curve'], name, mate=prev,
+                feat = create_feature(c['curve'], name, mate=prev, store=v.endswith('store'),
                                       join_target=target if k == 'A' else None)
                 st['feats'][k] = feat
                 extra = []
@@ -500,7 +498,8 @@ def build_queue():
             mark['first'] = len(COMPUTES)
             t0 = time.perf_counter()
             action(S['v'][v])
-            adsk.doEvents()
+            for _ in range(5):
+                adsk.doEvents()
             mark['s'] = round(time.perf_counter() - t0, 3)
 
         def verify():
