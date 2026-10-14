@@ -196,11 +196,20 @@ Findings:
   stored at creation, outside the compute, is fine and readable from other features.
 - **Entity tokens find the mate reliably.** `design.findEntityByToken` on the token of the
   custom feature, stored in a named value at creation, worked in every compute.
-- **Deleting A** (`deleteMe`) leaves B and C in health state Unknown, with no recompute.
-  What the user sees, and whether Undo brings A back intact, was not checked.
+- **Deleting A** through the API (`deleteMe`) leaves B and C in health state Unknown, with
+  no recompute. **Deleting A by hand in the timeline deletes B and C too**; Undo restores all
+  three.
+
+Checked by hand, with the spike's manual mode (one chain, no automatic edits):
+
+| Check | Result |
+|---|---|
+| Change A's Rotation in Change Parameters | B and C follow |
+| Undo and redo that change | B and C follow both ways |
+| Save, close, reopen, change A's Rotation again | B and C follow |
+| Delete A in the timeline | B and C are deleted with it; Undo restores all three |
 
 Conclusion: "Mesh with" is feasible. The new gear depends on the mate's custom feature, finds
 it by token, and computes its rotation recursively from the chain's parameters and circles.
 
-Not tested: save and reopen, undo and redo of these edits, the mate in another component,
-deleting the mate by hand, and a design opened without the add-in.
+Not tested: the mate in another component, and a design opened without the add-in.

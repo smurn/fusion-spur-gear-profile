@@ -80,7 +80,9 @@ compute events while your own dialog is open and rebuild the body yourself.
 - **A custom feature can depend on another custom feature.** (Confirmed, SPIKE-6) Not in
   Autodesk's list of allowed entities, but accepted. The dependent feature recomputes whenever
   the other one does, in the same recompute, and this carries on along a chain. Depending on
-  the other feature's base feature works the same way.
+  the other feature's base feature works the same way. It survives save and reopen, and undo
+  and redo. **Deleting the other feature in the timeline deletes the dependent ones with it**
+  (Undo restores them).
 - **Parameters are rejected as dependencies** with "Invalid argument entity", both a custom
   feature's own parameter and the same `ModelParameter`, although the documentation lists
   "any parameter". (Confirmed, SPIKE-6)
@@ -259,5 +261,6 @@ To match that (Confirmed):
 - Whether the target-body dependency was really what broke Join.
 - Whether `CustomFeatureInput.addDependency` works when lesson 1 is respected.
 - What happens when a dependency is deleted, or its sketch is. Deleting a custom feature that
-  another depends on left the dependent one in health state Unknown, without a recompute.
+  another depends on: by hand, the dependent ones are deleted too; through the API
+  (`deleteMe`), they stay in health state Unknown without a recompute.
 - Whether a joined gear follows its curve after the curve moves (CHK-5 in the spec).
