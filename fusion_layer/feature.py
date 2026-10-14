@@ -97,10 +97,138 @@ class NothingToJoin(gearcore.GearError):
     """Operation is Join and the gear touches no body (VAL-12)."""
 
 
+def has_errors(issues: list) -> bool:
+    return any(i.severity == gearcore.ERROR for i in issues)
+
+
+def spur_gears(component: adsk.fusion.Component) -> list:
+    features = component.features.customFeatures
+    return [features.item(i) for i in range(features.count)
+            if features.item(i).definition.id == FEATURE_ID]
+
+
+def curve_of(feature: adsk.fusion.CustomFeature):
+    dependency = feature.dependencies.itemById('curve')
+    curve = dependency.entity if dependency else None
+    if curve is None or not curve.isValid:
+        raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
+    return curve
+
+
+def feature_values(feature: adsk.fusion.CustomFeature) -> dict:
+    return {pid: feature.parameters.itemById(pid).value for pid, _, _, _ in PARAMS}
+
+
+def mate_of(feature: adsk.fusion.CustomFeature) -> typing.Optional[adsk.fusion.CustomFeature]:
+    """The gear this one meshes with (IN-17), or None. It is found by the entity
+    token stored with the feature, as tested in SPIKE-6."""
+    values = feature.customNamedValues
+    token = values.value('mate') if values.isExistingValue('mate') else ''
+    if not token:
+        return None
+    for entity in feature.parentComponent.parentDesign.findEntityByToken(token):
+        mate = adsk.fusion.CustomFeature.cast(entity)
+        if mate:
+            return mate
+    raise gearcore.GearError('The gear that {} meshes with no longer exists.'.format(feature.name))
+
+
+def resolve_mate(entity, editing: typing.Optional[adsk.fusion.CustomFeature] = None):
+    """The Spur Gear picked as "Mesh with" (IN-17, VAL-15): the gear feature, a
+    feature inside it (picking in the timeline may give either), or the gear's
+    curve. Returns (gear, '') or (None, the reason)."""
+    if entity is None:
+        return None, ''
+    timeline_object = adsk.fusion.TimelineObject.cast(entity)
+    if timeline_object:
+        entity = timeline_object.entity
+    entity = geometry.native(entity)
+    not_a_gear = 'Pick a Spur Gear in the timeline, or the circle or arc of one.'
+    custom = adsk.fusion.CustomFeature.cast(entity)
+    feature = adsk.fusion.Feature.cast(entity)
+    if custom:
+        candidates = [custom] if custom.definition.id == FEATURE_ID else []
+    elif geometry.is_gear_curve(entity):
+        candidates = []
+        for gear in spur_gears(entity.parentSketch.parentComponent):
+            dependency = gear.dependencies.itemById('curve')
+            if dependency and dependency.entity and geometry.native(dependency.entity) == entity:
+                candidates.append(gear)
+    elif feature:
+        candidates = [gear for gear in spur_gears(feature.parentComponent)
+                      if any(f == feature for f in gear.features)]
+    else:
+        candidates = []
+    if not candidates:
+        return None, not_a_gear
+    if editing is not None:
+        own = editing.timelineObject.index
+        earlier = [g for g in candidates if g.timelineObject.index < own]
+        if not earlier:
+            if all(g == editing for g in candidates):
+                return None, 'A gear cannot mesh with itself.'
+            return None, 'The gear to mesh with must come before this gear in the timeline.'
+        candidates = earlier
+    # Several gears may use the same curve: the latest one before this gear.
+    return max(candidates, key=lambda g: g.timelineObject.index), ''
+
+
+@dataclasses.dataclass
+class Mesh:
+    """How a gear meshes with its mate (DER-10, DER-11)."""
+    mate: adsk.fusion.CustomFeature
+    distance: float                  # mm, a
+    ideal: typing.Optional[float]    # mm, a_w
+    rotation: float                  # this gear's start rotation p that meshes
+
+
+def mesh_with(frame: geometry.Frame, params: gearcore.GearParams, mate: adsk.fusion.CustomFeature,
+              depth: int = 0) -> typing.Tuple[typing.Optional[Mesh], list]:
+    """Mesh a gear with valid parameters with its mate. Returns the mesh, or None
+    if there are errors, and the issues. Raises GearError if the mate itself
+    cannot be computed."""
+    mate_frame, mate_params = gear_state(mate, depth + 1)
+    layout = geometry.mesh_layout(frame, mate_frame)
+    if layout is None:
+        return None, [gearcore.Issue('VAL-17', gearcore.ERROR, 'The gear to mesh with must lie in '
+                                     'a parallel plane, and its center must differ from this one.')]
+    distance, direction = layout
+    issues = gearcore.mesh_issues(params, mate_params, distance)
+    if has_errors(issues):
+        return None, issues
+    mate_teeth, teeth = gearcore.tooth_count(mate_params), gearcore.tooth_count(params)
+    axis = gearcore.mesh_axis(direction, mate_params.rotation * 2 * math.pi / mate_teeth,
+                              mate_teeth, teeth)
+    rotation = gearcore.rotation_for_axis(geometry.angle_in(frame, mate_frame, axis), teeth)
+    ideal = gearcore.ideal_center_distance(params.module, params.pressure_angle, teeth, mate_teeth,
+                                           params.profile_shift, mate_params.profile_shift)
+    return Mesh(mate, distance, ideal, rotation), issues
+
+
+def gear_state(feature: adsk.fusion.CustomFeature, depth: int = 0):
+    """Frame and parameters of an existing gear, with the rotation it really has:
+    from its mate if it has one, along the whole chain (DER-11). This is worked
+    out anew each time and never stored: writing named values during a compute
+    broke the feature in SPIKE-6 (ARC-8). Raises GearError."""
+    if depth > 100:
+        raise gearcore.GearError('The gears mesh with each other in a loop.')
+    frame = geometry.frame_of(curve_of(feature))
+    params = to_gear_params(frame, feature_values(feature))
+    mate = mate_of(feature)
+    if mate is None:
+        return frame, params
+    mesh, issues = mesh_with(frame, params, mate, depth)
+    if mesh is None:
+        raise gearcore.GearError('{}: {}'.format(feature.name, '; '.join(
+            i.message for i in issues if i.severity == gearcore.ERROR)))
+    return frame, dataclasses.replace(params, rotation=mesh.rotation)
+
+
 @dataclasses.dataclass
 class Settings:
     """What the dialog currently says."""
     curve: typing.Any
+    mate: typing.Any       # the selected entity, not yet resolved to a gear
     operation: str
     flip: bool
     expressions: dict
@@ -113,10 +241,14 @@ class Evaluation:
     params: typing.Optional[gearcore.GearParams] = None
     outline: typing.Optional[gearcore.Outline] = None
     issues: list = dataclasses.field(default_factory=list)
+    mate: typing.Optional[adsk.fusion.CustomFeature] = None
+    mesh: typing.Optional[Mesh] = None
 
 
-def evaluate(curve, values: dict) -> Evaluation:
-    """Run the gear math for a curve and parameter values. Never raises for bad input."""
+def evaluate(curve, values: dict, mate=None,
+             editing: typing.Optional[adsk.fusion.CustomFeature] = None) -> Evaluation:
+    """Run the gear math for a curve, parameter values and, optionally, the entity
+    picked as "Mesh with". Never raises for bad input."""
     ev = Evaluation()
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
         ev.issues.append(gearcore.Issue('VAL-1', gearcore.ERROR, 'Select a sketch circle or arc.'))
@@ -124,7 +256,24 @@ def evaluate(curve, values: dict) -> Evaluation:
     ev.frame = geometry.frame_of(curve)
     ev.params = to_gear_params(ev.frame, values)
     ev.issues = gearcore.validate(ev.params)
-    if not any(i.severity == gearcore.ERROR for i in ev.issues):
+    if mate is not None and not has_errors(ev.issues):
+        ev.mate, why = resolve_mate(mate, editing)
+        if ev.mate is not None and ev.mate.parentComponent != geometry.native(curve).parentSketch.parentComponent:
+            ev.mate, why = None, 'The gear to mesh with must be in the same component.'
+        if ev.mate is None:
+            ev.issues.append(gearcore.Issue('VAL-15', gearcore.ERROR, why))
+        else:
+            try:
+                ev.mesh, issues = mesh_with(ev.frame, ev.params, ev.mate)
+            except gearcore.GearError as e:
+                ev.mesh, issues = None, [gearcore.Issue(
+                    'VAL-15', gearcore.ERROR, 'The gear to mesh with cannot be computed: {}'.format(e))]
+            if ev.mesh is not None:
+                # Which teeth of an arc are generated depends on the rotation (VAL-6).
+                ev.params = dataclasses.replace(ev.params, rotation=ev.mesh.rotation)
+                ev.issues = gearcore.validate(ev.params)
+            ev.issues += issues
+    if not has_errors(ev.issues):
         try:
             ev.outline = gearcore.gear_outline(ev.params)
         except gearcore.GearError as e:   # VAL-14: only found while building the outline
@@ -145,6 +294,10 @@ def info_text(ev: Evaluation) -> str:
         if d.tip_thickness is not None:
             lines.append('Tooth thickness {:.3f}, at the tip {:.3f} mm'.format(
                 d.tooth_thickness, d.tip_thickness))
+    if ev.mesh:   # UI-9, DER-10
+        ideal = 'none' if ev.mesh.ideal is None else '{:.3f} mm'.format(ev.mesh.ideal)
+        lines.append('Meshes with {}: center distance {:.3f} mm, ideal {}'.format(
+            ev.mesh.mate.name, ev.mesh.distance, ideal))
     for issue in ev.issues:
         lines.append('<b>{}:</b> {}'.format(issue.severity.capitalize(), issue.message))
     return '<br/>'.join(lines)
@@ -156,6 +309,9 @@ class SpurGearFeature:
         self._command_handlers = []  # kept while a dialog is open
         self._command = None
         self._editing: typing.Optional[adsk.fusion.CustomFeature] = None
+        #: The rotation the mate gives the gear in the dialog, kept for when the
+        #: mate is cleared (FEA-14).
+        self._mesh_rotation: typing.Optional[float] = None
         #: Settings of the last gear created, to start the next one with (UI-7).
         #: Kept in memory only.
         self._last_used: dict = {}
@@ -221,6 +377,12 @@ class SpurGearFeature:
         curve = inputs.addSelectionInput('curve', 'Circle or arc', 'Select a sketch circle or arc')
         curve.addSelectionFilter('SketchCurves')
         curve.setSelectionLimits(1, 1)
+        mate = inputs.addSelectionInput('mate', 'Mesh with',
+                                        'Select a Spur Gear in the timeline, or its circle or arc')
+        mate.addSelectionFilter('Features')
+        mate.addSelectionFilter('SketchCurves')
+        mate.setSelectionLimits(0, 1)
+        self._mesh_rotation = None
 
         operation = inputs.addDropDownCommandInput(
             'operation', 'Operation', adsk.core.DropDownStyles.TextListDropDownStyle)
@@ -250,7 +412,7 @@ class SpurGearFeature:
             group.children.addValueInput(pid, label, unit(kind), value)
             changed = changed or differs
         group.isExpanded = changed
-        inputs.addTextBoxCommandInput('info', '', '', 7, True)
+        inputs.addTextBoxCommandInput('info', '', '', 8, True)
         self._update_dialog(inputs)
 
         self._command_handlers = []
@@ -293,10 +455,15 @@ class SpurGearFeature:
                 return None
             expressions[pid], values[pid] = value_input.expression, value_input.value
         curve_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('curve'))
+        mate_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('mate'))
         operation = adsk.core.DropDownCommandInput.cast(inputs.itemById('operation')).selectedItem.name
         curve = curve_input.selection(0).entity if curve_input.selectionCount else None
+        mate = mate_input.selection(0).entity if mate_input.selectionCount else None
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
-        return Settings(curve, operation, flip, expressions, values)
+        return Settings(curve, mate, operation, flip, expressions, values)
+
+    def _evaluate(self, settings: Settings) -> Evaluation:
+        return evaluate(settings.curve, settings.values, settings.mate, self._editing)
 
     def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
         """VAL-12, checked without building the gear: if not even a cylinder of the
@@ -326,26 +493,38 @@ class SpurGearFeature:
         settings = self._read(inputs)
         text = 'Enter valid values.'
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values)
+            ev = self._evaluate(settings)
             text = info_text(ev)
             note = note or self._join_problem(settings, ev)
+            self._mesh_rotation = ev.mesh.rotation if ev.mesh else None
+            # The mate sets the rotation; the start rotation is not used (UI-9).
+            find_input(inputs, 'rotation').isEnabled = settings.mate is None
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
+        inputs = self._command.commandInputs
+        if args.input.id == 'mate' and self._mesh_rotation is not None:
+            if not adsk.core.SelectionCommandInput.cast(args.input).selectionCount:
+                # FEA-14: without its mate the gear stays where the mate had put it.
+                rotation = adsk.core.ValueCommandInput.cast(find_input(inputs, 'rotation'))
+                rotation.expression = '{:.6g}'.format(self._mesh_rotation * 100)
         if args.input.id != 'info':
-            self._update_dialog(self._command.commandInputs)
+            self._update_dialog(inputs)
 
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
+        entity = args.selection.entity
         if args.activeInput.id == 'curve':
-            args.isSelectable = geometry.is_gear_curve(geometry.native(args.selection.entity))
+            args.isSelectable = geometry.is_gear_curve(geometry.native(entity))
+        elif args.activeInput.id == 'mate':
+            args.isSelectable = resolve_mate(entity, self._editing)[0] is not None
 
     def _on_validate(self, args: adsk.core.ValidateInputsEventArgs):
         settings = self._read(args.inputs)
         valid = False
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values)
+            ev = self._evaluate(settings)
             valid = ev.outline is not None and not self._join_problem(settings, ev)
         args.areInputsValid = valid   # UI-5
 
@@ -356,12 +535,32 @@ class SpurGearFeature:
         the whole edit (rollTo plus beginStep, or Command.editingFeature, which is
         not always accepted) hid the gear and gave Undo an extra step that only
         moved the timeline marker. _apply_edit rolls it back just for the change."""
+        inputs = args.command.commandInputs
         dependency = self._editing.dependencies.itemById('curve')
         if dependency and dependency.entity:
-            selection = adsk.core.SelectionCommandInput.cast(
-                args.command.commandInputs.itemById('curve'))
+            selection = adsk.core.SelectionCommandInput.cast(inputs.itemById('curve'))
             if not selection.addSelection(dependency.entity):
                 log('could not select the curve of ' + self._editing.name)
+        try:
+            mate = mate_of(self._editing)
+        except gearcore.GearError as e:
+            mate = None
+            log(str(e))
+        if mate:
+            selection = adsk.core.SelectionCommandInput.cast(inputs.itemById('mate'))
+            selected = False
+            try:
+                selected = selection.addSelection(mate)
+            except RuntimeError:
+                pass
+            if not selected:   # CHK-7: the feature may not be selectable; its curve is
+                try:
+                    selected = selection.addSelection(curve_of(mate))
+                except (RuntimeError, gearcore.GearError):
+                    pass
+            if not selected:
+                log('could not select the gear that {} meshes with'.format(self._editing.name))
+            self._update_dialog(inputs)
 
     def _on_destroy(self, args: adsk.core.CommandEventArgs):
         self._command = None
@@ -403,7 +602,7 @@ class SpurGearFeature:
 
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
-        ev = evaluate(settings.curve, settings.values)
+        ev = self._evaluate(settings)
         if ev.outline is None:
             return None
         component = geometry.native(settings.curve).parentSketch.parentComponent
@@ -432,7 +631,8 @@ class SpurGearFeature:
         feature = features.customFeatures.add(inp)
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
-        self._set_dependencies(feature, settings)
+        feature.customNamedValues.addOrSetValue('mate', ev.mate.entityToken if ev.mate else '')
+        self._set_dependencies(feature, settings.curve, ev.mate)
         return feature
 
     @staticmethod
@@ -481,15 +681,24 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', operation)
 
     @staticmethod
-    def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):
-        """Point the feature at its curve (FEA-2). A dependency can only refer to
-        the design as it was before the feature."""
+    def _set_dependencies(feature: adsk.fusion.CustomFeature, curve,
+                          mate: typing.Optional[adsk.fusion.CustomFeature]):
+        """Point the feature at its curve (FEA-2) and at the gear it meshes with
+        (FEA-12). A dependency can only refer to the design as it was before the
+        feature. The mate is its custom feature: Fusion rejects a parameter as a
+        dependency, and depending on the mate's body broke recomputing (SPIKE-6)."""
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
-            wanted = {'curve': settings.curve}
+            wanted = {'curve': curve}
+            if mate is not None:
+                wanted['mate'] = mate
+            else:
+                existing = feature.dependencies.itemById('mate')
+                if existing:
+                    existing.deleteMe()
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid
                 # argument entity"). Try the entity as it was selected, then the
@@ -530,12 +739,14 @@ class SpurGearFeature:
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
+        mate = self._evaluate(settings).mate
         feature.timelineObject.rollTo(True)
         try:
             for pid, _, _, _ in PARAMS:
                 feature.parameters.itemById(pid).expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
-            self._set_dependencies(feature, settings)
+            feature.customNamedValues.addOrSetValue('mate', mate.entityToken if mate else '')
+            self._set_dependencies(feature, settings.curve, mate)
             self._recompute(feature)
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)
@@ -544,13 +755,9 @@ class SpurGearFeature:
                 resume_at.rollTo(False)
 
     def _recompute(self, feature: adsk.fusion.CustomFeature):
-        """Rebuild the gear body from the feature's curve and parameters (FEA-2, FEA-4)."""
-        dependency = feature.dependencies.itemById('curve')
-        curve = dependency.entity if dependency else None
-        if curve is None or not curve.isValid:
-            raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
-        values = {pid: feature.parameters.itemById(pid).value for pid, _, _, _ in PARAMS}
-        ev = evaluate(curve, values)
+        """Rebuild the gear body from the feature's curve, parameters and mate
+        (FEA-2, FEA-4, FEA-12). Reads only; see gear_state."""
+        ev = evaluate(curve_of(feature), feature_values(feature), mate_of(feature))
         if ev.outline is None:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))
@@ -567,8 +774,11 @@ class SpurGearFeature:
             base.finishEdit()
 
     def _on_compute(self, args: adsk.fusion.CustomFeatureEventArgs):
-        if self._command is not None:
-            return   # our own dialog rebuilds the gear itself
+        if self._command is not None and (self._editing is None or
+                                          args.customFeature == self._editing):
+            # Our own dialog rebuilds the gear itself. Gears that mesh with the
+            # edited one still recompute, so the preview shows them following.
+            return
         try:
             self._recompute(args.customFeature)
         except Exception:

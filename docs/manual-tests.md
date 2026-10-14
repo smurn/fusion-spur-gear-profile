@@ -130,3 +130,41 @@ custom features (FEA-11).
 46. Stop the add-in, then open the design. The gears are shown as last computed. Note what
     Fusion reports for the features and what happens when a circle is moved.
 47. Start the add-in again with the design open. Move a circle; the gear follows.
+
+## Mesh with (IN-17, FEA-12 to FEA-14, UI-9, CHK-7)
+
+Setup: one sketch with three circles, each center fixed by dimensions: A, diameter 20 mm at
+(0, 0); B, diameter 30 mm at (25, 0); C, diameter 20 mm at (25, 25). Create a plain gear A on
+the first circle.
+
+48. Start Spur Gear, select circle B, click into "Mesh with" and click gear A **in the
+    timeline** (CHK-7). Note whether it is accepted. The info box says "Meshes with Spur
+    Gear1: center distance 25.000 mm, ideal 25.000 mm", Start rotation is greyed out. On OK,
+    zoom in where the gears meet: a tooth of one sits centered in a gap of the other, with no
+    visible overlap.
+49. Undo, and repeat with A's **circle** picked for "Mesh with". Same result.
+50. Create gear C on circle C, meshing with B. Zoom in: C meshes with B.
+51. Change A's Start rotation in Change Parameters, to 30. B and C turn and stay meshed.
+52. Edit A (double-click it) and change Start rotation: B and C follow in the preview. Cancel:
+    all three return.
+53. Edit the sketch and move A to (-1, 0). B turns and stays meshed on the line between the
+    centers. Edit B: the info box warns that the center distance is 26.000 mm and the gears
+    mesh at 25.000 mm. Cancel, and move A back.
+54. Undo and redo the last few steps. B and C follow every time.
+55. Edit B: "Mesh with" shows A. Clear it: Start rotation becomes available and is filled in;
+    B does not move. OK. Change A's Start rotation: B no longer follows (C still follows B).
+    Undo both steps.
+56. Errors, each in a new Spur Gear dialog on circle B:
+    - Module 1.25 with "Mesh with" A: error that the module differs; OK is disabled.
+    - A circle that has no gear as "Mesh with": it cannot be picked, or the info box says to
+      pick a Spur Gear.
+57. Edit A and try to pick B as "Mesh with": it cannot be picked, or the info box says the gear
+    must come before this one in the timeline.
+58. Draw a circle of diameter 30 mm on an offset plane 10 mm above, centered at (-25, 0).
+    Create a gear on it meshing with A. It meshes with A, seen from above.
+59. Draw an arc of radius 15 mm around (0, -25), about 120 degrees, facing A. Create a sector
+    gear on it meshing with A. Its teeth mesh with A.
+60. Create B as Join onto a body it touches, meshing with A. It meshes and joins.
+61. Save, close and reopen. Change A's Start rotation: B and C follow.
+62. Delete A in the timeline: the gears meshing with it, directly or through the chain, are
+    deleted too (FEA-13). Undo restores all of them.

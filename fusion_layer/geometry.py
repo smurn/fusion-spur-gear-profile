@@ -40,7 +40,7 @@ class Frame:
 
 def native(entity):
     """The entity in its own component, for entities picked through an occurrence."""
-    return entity.nativeObject or entity
+    return getattr(entity, 'nativeObject', None) or entity
 
 
 def is_gear_curve(entity) -> bool:
@@ -69,6 +69,27 @@ def frame_of(curve) -> Frame:
                                       c * start.z + s * side.z)
         y = normal.crossProduct(x)
     return Frame(origin, x, y, normal, 2 * geo.radius / CM, span)
+
+
+def mesh_layout(frame: Frame, mate: Frame) -> typing.Optional[typing.Tuple[float, float]]:
+    """Distance (mm) and direction from the mate's center to this gear's center,
+    measured in the mate's plane (DER-10, DER-11). None if the planes are not
+    parallel or the centers coincide (VAL-17)."""
+    if frame.normal.crossProduct(mate.normal).length > 1e-6:
+        return None
+    offset = mate.origin.vectorTo(frame.origin)
+    x, y = offset.dotProduct(mate.x) / CM, offset.dotProduct(mate.y) / CM
+    distance = math.hypot(x, y)
+    if distance < 1e-6:
+        return None
+    return distance, math.atan2(y, x)
+
+
+def angle_in(frame: Frame, other: Frame, angle: float) -> float:
+    """An angle measured in the other frame's plane, measured in this frame's
+    plane instead. The planes are parallel; their normals may point either way."""
+    direction = other.direction(angle)
+    return math.atan2(direction.dotProduct(frame.y), direction.dotProduct(frame.x))
 
 
 def source_bodies(base: adsk.fusion.BaseFeature) -> list:
