@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "b7e2a9d4-3c51-4f08-9a6e-1d4c8f2e7b90",
+	"author": "Stefan",
+	"description": {
+		"": "SPIKE-6: one custom feature following another (throwaway)."
+	},
+	"version": "0.0.1",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
