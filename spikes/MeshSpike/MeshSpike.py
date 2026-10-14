@@ -52,6 +52,9 @@ VI = adsk.core.ValueInput
 JOIN = adsk.fusion.FeatureOperations.JoinFeatureOperation
 NEW_BODY = adsk.fusion.FeatureOperations.NewBodyFeatureOperation
 
+# Manual mode: one document with the 'feature' chain only, no automatic edits, for
+# checks by hand (save and reopen, undo, deleting A). The automatic runs are done.
+MANUAL = True
 VARIANTS = ('single', 'feature', 'feature-store', 'base', 'body', 'param', 'param-chain', 'circle', 'feature-join', 'body-join')
 
 _definition = None
@@ -468,7 +471,7 @@ def build_queue():
         S['v'][v] = {'doc': doc, 'design': design}
         use(v)
 
-    for i, v in enumerate(VARIANTS):
+    for v in (('feature',) if MANUAL else VARIANTS):
         def create(v=v):
             st = use(v)
             root, pos = S['root'], layout(0)
@@ -558,7 +561,7 @@ def build_queue():
         st['centers'][k][0] += dx
         st['sketches'][k]['cx'].parameter.value = st['centers'][k][0] * CM
 
-    for v in VARIANTS:
+    for v in (() if MANUAL else VARIANTS):
         edit('E1-' + v, "A's rotation parameter changes, " + v, v, lambda st: set_rot(st, 30))
         edit('E2-' + v, "A's circle moves, " + v, v, lambda st: move(st, 'A', -8))
         if v != 'single':
@@ -580,7 +583,7 @@ def build_queue():
                 ok, hs, [(c.get('feature'), 'error' if c.get('error') else 'ok') for c in computes]), {
                 'computes': computes}
         QUEUE.append(('cmd', lambda: REP.run('D-' + v, 'Delete A, what happens to B and C, ' + v, fn)))
-    for v in ('feature', 'body', 'param'):
+    for v in (() if MANUAL else ('feature', 'body', 'param')):
         delete_a(v)
 
     def finish():
@@ -589,6 +592,18 @@ def build_queue():
             tally[it['status']] = tally.get(it['status'], 0) + 1
         REP.add('END', 'run finished', 'INFO', '{} compute events in total; {}'.format(len(COMPUTES), tally))
         app.activeViewport.fit()
+        if MANUAL:
+            ui.messageBox(
+                'Mesh spike, manual mode: {}\n\nThis document has three features: A (left), '
+                'B (right) and C (above B). Each is a small cylinder on its circle; B and C turn '
+                "with A. Keep this add-in running.\n\n"
+                "1. Modify > Change Parameters: set the Rotation of 'A feature' to 90 deg. "
+                'Do B and C move?\n'
+                '2. Undo, then redo. Do B and C move back and forth?\n'
+                '3. Save, close, reopen, and repeat step 1 with another angle.\n'
+                "4. Delete 'A feature' in the timeline (hover to find it). What do B and C "
+                'show? Then Undo.'.format(tally))
+            return
         ui.messageBox(
             'Mesh dependency spike finished: {}\n\nReport:\n{}\n\nThe features stay live while this '
             'add-in runs. '
