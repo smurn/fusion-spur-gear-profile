@@ -206,6 +206,13 @@ class ComputeHandler(adsk.fusion.CustomFeatureEventHandler):
             finally:
                 base.finishEdit()
             store_phase(feat, phase, entry)
+            tl = S['design'].timeline
+            entry['marker'] = '{}/{}'.format(tl.markerPosition, tl.count)
+            try:
+                xy = marker_xy(feat)
+                entry['body_after'] = None if xy is None else [round(xy[0], 3), round(xy[1], 3)]
+            except Exception as e:
+                entry['body_after'] = 'unreadable: {}'.format(e)
         except Exception:
             entry['error'] = traceback.format_exc()
             try:
@@ -223,8 +230,7 @@ def add_dependencies(feat, deps):
     """Adds (id, entity or list of candidates) pairs with the timeline rolled back to
     before the feature. Returns {id: 'ok (how)' or the error}."""
     timeline = S['design'].timeline
-    resume_at = timeline.item(timeline.markerPosition - 1)
-    out = {}
+    out = {'_marker_before': '{}/{}'.format(timeline.markerPosition, timeline.count)}
     feat.timelineObject.rollTo(True)
     try:
         for dep_id, candidates in deps:
@@ -243,7 +249,10 @@ def add_dependencies(feat, deps):
             else:
                 out[dep_id] = 'FAILED ' + '; '.join(errors)
     finally:
-        resume_at.rollTo(False)
+        # Run 1 rolled forward to the item before the marker, as the add-in does; the
+        # marker then ended up before the features. Here it always goes to the end.
+        timeline.moveToEnd()
+        out['_marker_after'] = '{}/{}'.format(timeline.markerPosition, timeline.count)
     return out
 
 
@@ -396,8 +405,21 @@ def expected(v):
 
 
 def marker_xy(feat):
-    com = base_of(feat).bodies.item(0).physicalProperties.centerOfMass
+    bodies = base_of(feat).bodies
+    if bodies.count == 0:
+        return None
+    com = bodies.item(0).physicalProperties.centerOfMass
     return com.x / CM, com.y / CM
+
+
+def timeline_state():
+    tl = S['design'].timeline
+    items = []
+    for i in range(tl.count):
+        it = tl.item(i)
+        items.append('{}{}{}'.format(it.name, ' [group]' if it.isGroup else '',
+                                     ' [rolled back]' if it.isRolledBack else ''))
+    return {'marker': tl.markerPosition, 'count': tl.count, 'items': items}
 
 
 def check(v, which=('A', 'B', 'C')):
@@ -408,7 +430,11 @@ def check(v, which=('A', 'B', 'C')):
             out[k] = 'n/a'   # A's body is merged into the plate
             continue
         got = marker_xy(st['feats'][k])
-        out[k] = math.hypot(got[0] - want[k][0], got[1] - want[k][1]) < 1e-3
+        if got is None:
+            out[k] = 'no body'
+            continue
+        ok = math.hypot(got[0] - want[k][0], got[1] - want[k][1]) < 1e-3
+        out[k] = True if ok else 'at ({:.2f}, {:.2f}) not ({:.2f}, {:.2f})'.format(*got, *want[k])
     return out
 
 
@@ -461,7 +487,8 @@ def build_queue():
             failed = [k for k, d in deps.items() for r in d.values() if r.startswith('FAILED')]
             status = 'PASS' if not failed and all(x in (True, 'n/a') for x in ok.values()) else 'FAIL'
             return status, 'dependencies {}; markers {}'.format(deps, ok), {
-                'deps': deps, 'health': {k: health(f) for k, f in st['feats'].items()}}
+                'deps': deps, 'health': {k: health(f) for k, f in st['feats'].items()},
+                'timeline': timeline_state()}
         QUEUE.append(('cmd', lambda create=create, v=v: REP.run('C-' + v, 'Create chain, ' + v, create)))
 
     def edit(cid, title, v, action, mode='direct'):
@@ -485,7 +512,9 @@ def build_queue():
             ok = check(v)
             data = {'computes': computes, 'seconds': mark.get('s'),
                     'health': {k: health(f) for k, f in S['v'][v]['feats'].items()}}
-            detail = 'markers {}; recomputed {}'.format(ok, names)
+            tl = timeline_state()
+            data['timeline'] = tl
+            detail = 'markers {}; recomputed {}; marker {}/{}'.format(ok, names, tl['marker'], tl['count'])
             good = all(x in (True, 'n/a') for x in ok.values())
             if not good:
                 S['design'].computeAll()
