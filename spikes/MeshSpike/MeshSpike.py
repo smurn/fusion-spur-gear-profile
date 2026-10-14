@@ -52,7 +52,7 @@ VI = adsk.core.ValueInput
 JOIN = adsk.fusion.FeatureOperations.JoinFeatureOperation
 NEW_BODY = adsk.fusion.FeatureOperations.NewBodyFeatureOperation
 
-VARIANTS = ('feature', 'feature-store', 'base', 'body', 'param', 'param-chain', 'circle', 'feature-join', 'body-join')
+VARIANTS = ('single', 'feature', 'feature-store', 'base', 'body', 'param', 'param-chain', 'circle', 'feature-join', 'body-join')
 
 _definition = None
 _handlers = []
@@ -130,7 +130,7 @@ def mate_of(feat, log=None):
     if not values.isExistingValue('mate'):
         return None
     try:
-        found = S['design'].findEntityByToken(values.value('mate'))
+        found = feat.parentComponent.parentDesign.findEntityByToken(values.value('mate'))
         if found:
             if log is not None:
                 log['mate_lookup'] = 'token'
@@ -288,7 +288,7 @@ def create_feature(curve, name, mate=None, join_target=None, store=False):
         _creating = False
 
 
-def mate_dependencies(variant, mate, chain_mate=None, plate=None):
+def mate_dependencies(variant, mate, chain_mate=None, plate=None, mate_body=None):
     """What a feature depends on, besides its own circle, for each variant."""
     def param(f):
         p = f.parameters.itemById('rotation')
@@ -305,7 +305,9 @@ def mate_dependencies(variant, mate, chain_mate=None, plate=None):
     elif kind == 'base':
         deps = [('mate', base_of(mate))]
     elif variant == 'body':
-        deps = [('mate', base_of(mate).bodies.item(0))]
+        # Read right after the mate was created: later in the same command,
+        # base.bodies was empty (run 1 to 3, "Bad index parameter").
+        deps = [('mate', mate_body)]
     elif variant == 'body-join':
         # A's body is merged into the plate; B is a body of its own.
         deps = [('mate', plate if mate.name.startswith('A ') else base_of(mate).bodies.item(0))]
@@ -420,10 +422,20 @@ def timeline_state():
     return {'marker': tl.markerPosition, 'count': tl.count, 'items': items}
 
 
-def check(v, which=('A', 'B', 'C')):
+def use(v):
+    """Each chain has its own document (run 1 to 3 had all in one, and nothing
+    recomputed after an edit; a broken chain may have blocked the others)."""
+    st = S['v'][v]
+    if app.activeDocument != st['doc']:
+        st['doc'].activate()
+    S['design'], S['root'] = st['design'], st['design'].rootComponent
+    return st
+
+
+def check(v):
     """{name: True/False/'n/a'} for whether each marker sits where it should."""
     st, want, out = S['v'][v], expected(v), {}
-    for k in which:
+    for k in st['feats']:
         if k == 'A' and v.endswith('join'):
             out[k] = 'n/a'   # A's body is merged into the plate
             continue
@@ -444,20 +456,23 @@ def health(feat):
 
 
 def build_queue():
-    def setup():
-        app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+    S['v'] = {}
+
+    def new_document(v):
+        doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
         design = adsk.fusion.Design.cast(app.activeProduct)
         try:
             design.designType = adsk.fusion.DesignTypes.ParametricDesignType
         except Exception:
             pass
-        S.update(design=design, root=design.rootComponent, v={})
-    QUEUE.append(('direct', setup))
+        S['v'][v] = {'doc': doc, 'design': design}
+        use(v)
 
     for i, v in enumerate(VARIANTS):
-        def create(v=v, i=i):
-            root, pos = S['root'], layout(i)
-            st = S['v'][v] = {'centers': pos, 'rotA': 0.0, 'sketches': {}, 'feats': {}}
+        def create(v=v):
+            st = use(v)
+            root, pos = S['root'], layout(0)
+            st.update(centers=pos, rotA=0.0, sketches={}, feats={}, bodies={})
             target = None
             if v.endswith('join'):
                 sk = root.sketches.add(root.xYConstructionPlane)
@@ -468,44 +483,51 @@ def build_queue():
                 target = root.features.extrudeFeatures.addSimple(
                     sk.profiles.item(0), VI.createByReal(-0.2), NEW_BODY).bodies.item(0)
             deps, prev = {}, None
-            for k in 'ABC':
+            for k in ('A' if v == 'single' else 'ABC'):
                 c = circle_sketch(root, 'Sketch {} {}'.format(k, v), pos[k][0], pos[k][1], RADII[k])
                 st['sketches'][k] = c
                 name = '{} {}'.format(k, v)
                 feat = create_feature(c['curve'], name, mate=prev, store=v.endswith('store'),
                                       join_target=target if k == 'A' else None)
                 st['feats'][k] = feat
+                try:
+                    st['bodies'][k] = base_of(feat).bodies.item(0)
+                except Exception:
+                    st['bodies'][k] = None
                 extra = []
                 if prev is not None:
                     chain = st['feats']['A'] if (v == 'param-chain' and k == 'C') else None
-                    extra = mate_dependencies(v, prev, chain, target)
+                    extra = mate_dependencies(v, prev, chain, target, st['bodies'][prev_key])
                 deps[k] = add_dependencies(feat, [('curve', c['curve'])] + extra)
-                prev = feat
+                prev, prev_key = feat, k
             ok = check(v)
             failed = [k for k, d in deps.items() for r in d.values() if r.startswith('FAILED')]
             status = 'PASS' if not failed and all(x in (True, 'n/a') for x in ok.values()) else 'FAIL'
             return status, 'dependencies {}; markers {}'.format(deps, ok), {
                 'deps': deps, 'health': {k: health(f) for k, f in st['feats'].items()},
                 'timeline': timeline_state()}
+        QUEUE.append(('direct', lambda v=v: new_document(v)))
         QUEUE.append(('cmd', lambda create=create, v=v: REP.run('C-' + v, 'Create chain, ' + v, create)))
 
     def edit(cid, title, v, action, mode='direct'):
         mark = {}
 
         def act():
-            if v not in S['v']:
+            if 'feats' not in S['v'].get(v, {}):
                 return
+            st = use(v)
             mark['first'] = len(COMPUTES)
             t0 = time.perf_counter()
-            action(S['v'][v])
+            action(st)
             for _ in range(5):
                 adsk.doEvents()
             mark['s'] = round(time.perf_counter() - t0, 3)
 
         def verify():
-            if v not in S['v']:
+            if 'feats' not in S['v'].get(v, {}):
                 REP.add(cid, title, 'SKIP', 'chain was not created')
                 return
+            use(v)
             computes = COMPUTES[mark.get('first', 0):]
             names = [c.get('feature') for c in computes]
             ok = check(v)
@@ -539,15 +561,16 @@ def build_queue():
     for v in VARIANTS:
         edit('E1-' + v, "A's rotation parameter changes, " + v, v, lambda st: set_rot(st, 30))
         edit('E2-' + v, "A's circle moves, " + v, v, lambda st: move(st, 'A', -8))
-        edit('E3-' + v, "B's circle moves (C should follow), " + v, v, lambda st: move(st, 'B', 4))
+        if v != 'single':
+            edit('E3-' + v, "B's circle moves (C should follow), " + v, v, lambda st: move(st, 'B', 4))
         edit('E4-' + v, "A's rotation changes inside a command, " + v, v,
              lambda st: set_rot(st, 55), mode='cmd')
 
     def delete_a(v):
         def fn():
-            if v not in S['v']:
+            if 'feats' not in S['v'].get(v, {}):
                 return 'SKIP', 'chain was not created', {}
-            st = S['v'][v]
+            st = use(v)
             first = len(COMPUTES)
             ok = st['feats']['A'].deleteMe()
             adsk.doEvents()
@@ -568,11 +591,8 @@ def build_queue():
         app.activeViewport.fit()
         ui.messageBox(
             'Mesh dependency spike finished: {}\n\nReport:\n{}\n\nThe features stay live while this '
-            'add-in runs. By hand, if you like:\n'
-            "1. Modify > Change Parameters: change the Rotation of 'A param-chain'. Do B and C "
-            'of that row follow?\n'
-            '2. Undo a few times (the last steps deleted A in three chains).\n'
-            '3. Save, close and reopen, then repeat step 1.'.format(tally, REP.dir))
+            'add-in runs. '
+            'Each chain is in its own unsaved document; close them without saving.'.format(tally, REP.dir))
     QUEUE.append(('direct', finish))
 
 
