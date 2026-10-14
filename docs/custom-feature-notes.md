@@ -77,6 +77,18 @@ compute events while your own dialog is open and rebuild the body yourself.
   that listed its target body as a dependency did not appear at all, with no error. It worked
   after the dependency was removed, but the Join logic was reworked in the same change.
 - To change a dependency later, set `dependency.entity` under the same timeline rollback.
+- **A custom feature can depend on another custom feature.** (Confirmed, SPIKE-6) Not in
+  Autodesk's list of allowed entities, but accepted. The dependent feature recomputes whenever
+  the other one does, in the same recompute, and this carries on along a chain. Depending on
+  the other feature's base feature works the same way.
+- **Parameters are rejected as dependencies** with "Invalid argument entity", both a custom
+  feature's own parameter and the same `ModelParameter`, although the documentation lists
+  "any parameter". (Confirmed, SPIKE-6)
+- **Do not depend on another custom feature's body**, nor on a body its combine modifies.
+  (Confirmed, SPIKE-6) The dependent feature ends up with no body, and then nothing in the
+  document recomputes after an edit.
+- To find another custom feature during compute, store its `entityToken` in a named value at
+  creation and look it up with `design.findEntityByToken`. (Confirmed, SPIKE-6)
 
 ## Parameters and other stored values
 
@@ -90,6 +102,9 @@ compute events while your own dialog is open and rebuild the body yourself.
 - For non-numeric settings (a checkbox, an operation), use
   `feature.customNamedValues.addOrSetValue(id, text)`. They are stored with the feature but
   are not parameters and do not trigger a recompute.
+- **Do not write named values inside the compute handler.** (Confirmed, SPIKE-6) A chain
+  whose compute stored a value lost its bodies after the next edit; the same chain without the
+  write worked. Write them at creation or in the edit command.
 
 ## The compute handler
 
@@ -110,6 +125,10 @@ finally:
   working. Deleting the old body and adding a new one would break those references.
 - While the base feature is in edit mode its bodies are the source bodies; outside edit mode
   `base.bodies` are the result bodies.
+- **One broken custom feature can stop every recompute in its document.** (Observed,
+  SPIKE-6) With a feature that had lost its body in the document, no feature recomputed after
+  any edit, and Compute All ran the handlers but changed no body. Test variants in separate
+  documents.
 - **Report failure with a predefined message id.** (Confirmed)
   `args.computeStatus.statusMessages.addError('DRPOINT_COMPUTE_FAILED', '')` turns the feature
   red in the timeline. Free text is not accepted, so log the details. If the handler changes
@@ -239,5 +258,6 @@ To match that (Confirmed):
 - Why `Command.editingFeature` is sometimes refused.
 - Whether the target-body dependency was really what broke Join.
 - Whether `CustomFeatureInput.addDependency` works when lesson 1 is respected.
-- What happens when a dependency is deleted, or its sketch is.
+- What happens when a dependency is deleted, or its sketch is. Deleting a custom feature that
+  another depends on left the dependent one in health state Unknown, without a recompute.
 - Whether a joined gear follows its curve after the curve moves (CHK-5 in the spec).

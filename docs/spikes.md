@@ -148,3 +148,59 @@ Requirements found the hard way:
 
 Not tested: the edit command (the spike has none), undo and redo, save and reopen, a design
 opened without the add-in, a selected curve on a non-XY plane or inside a component.
+
+## SPIKE-6 One custom feature following another (added)
+
+Question: for gears that mesh, can gear B depend on gear A so that B recomputes whenever A
+changes, and does that carry on along a chain A → B → C? Code in `spikes/MeshSpike`, four runs
+on Fusion 2705.1.30.
+
+The spike leaves out the gear math. Each feature makes a small cylinder on its circle at an
+angle. A's angle is its rotation parameter; B's angle follows from A's angle and the direction
+A → B, as for meshing; C's from B's. Each feature finds its mate through an entity token stored
+at creation and computes the angle recursively along the chain, so a feature is correct
+whenever it recomputes. The tests check whether it does, after four edits: A's rotation, A's
+circle moved, B's circle moved, and A's rotation changed inside a command.
+
+Result of the final run, each chain in its own document:
+
+| B depends on (besides its own circle) | Accepted | A's rotation changes | A's circle moves | B's circle moves |
+|---|---|---|---|---|
+| A's custom feature | Yes | B and C follow | B and C follow | C follows |
+| A's base feature | Yes | B and C follow | B and C follow | C follows |
+| A's custom feature, A joined to a plate | Yes | B and C follow | B and C follow | C follows |
+| A's circle only (control) | Yes | B and C stay | B and C follow | C follows |
+| A's rotation parameter | **No**, "Invalid argument entity" | (as the control) | | |
+| A's body | Yes, but B gets no body and nothing in the document recomputes any more | | | |
+| The plate A is joined to | Yes, same failure as A's body | | | |
+
+Every follow-up recompute happened inside the same edit. Compute All was not needed.
+
+Findings:
+
+- **Depend on the other custom feature.** Fusion's documentation lists bodies, sketch
+  entities, construction geometry and parameters as dependencies, not features, but a custom
+  feature (or its base feature) is accepted and works: B recomputes whenever A does, for any
+  reason, and C follows B in the same recompute.
+- **Parameters are rejected** as dependencies, both the custom parameter and the same model
+  parameter looked up by name, although the documentation lists them.
+- **A dependency on another feature's body breaks things.** B ends up without a body, and
+  from then on no feature in the document recomputes after an edit, including unrelated ones.
+- **One broken custom feature can stop all recomputes in its document.** In runs 1 to 3 all
+  chains shared one document. The broken body chain made every other chain look broken too:
+  no recompute after any edit, and Compute All did not change any body.
+- **Do not write to the feature during its own compute.** A chain that stored a value with
+  `customNamedValues.addOrSetValue` inside the compute handler broke: after an edit, the
+  bodies of A and B read with their center of mass at the origin. The same chain without the
+  write worked. A value
+  stored at creation, outside the compute, is fine and readable from other features.
+- **Entity tokens find the mate reliably.** `design.findEntityByToken` on the token of the
+  custom feature, stored in a named value at creation, worked in every compute.
+- **Deleting A** (`deleteMe`) leaves B and C in health state Unknown, with no recompute.
+  What the user sees, and whether Undo brings A back intact, was not checked.
+
+Conclusion: "Mesh with" is feasible. The new gear depends on the mate's custom feature, finds
+it by token, and computes its rotation recursively from the chain's parameters and circles.
+
+Not tested: save and reopen, undo and redo of these edits, the mate in another component,
+deleting the mate by hand, and a design opened without the add-in.
