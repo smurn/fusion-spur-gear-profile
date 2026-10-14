@@ -3,7 +3,7 @@
 Status: **Draft 0.9** (2026-10-13). Version 0.8 describes the add-in as implemented in
 version 0.9.0. Draft 0.9 adds meshing with another gear ("Mesh with"), which is not
 implemented yet: IN-17, DER-10, DER-11, the mesh part of GEO-9, FEA-12 to FEA-14, UI-9,
-VAL-15 to VAL-18, D-22 to D-25, ARC-8 and the mesh check in TST-2. Requirements have stable
+VAL-15 to VAL-18, D-22 to D-25, CHK-7, ARC-8 and the mesh check in TST-2. Requirements have stable
 IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §11.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
@@ -93,7 +93,7 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-13 | Flip side | off | Off: the gear extends from the sketch plane along its normal. On: the opposite side |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
 | IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
-| IN-17 | Mesh with | none | Optional. The curve (IN-1) of another Spur Gear, the mate. When set, the rotation comes from DER-11 and IN-10 is not used (FEA-12) |
+| IN-17 | Mesh with | none | Optional. Another Spur Gear, the mate, picked as its feature in the timeline or as its curve (IN-1). When set, the rotation comes from DER-11 and IN-10 is not used (FEA-12) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -242,8 +242,9 @@ it a solid.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
   deviation are in a group named Advanced. It is collapsed unless one of them differs from
   its default.
-- **UI-9** "Mesh with" is an optional selection right after the curve. It accepts sketch
-  circles and arcs; VAL-15 checks that the curve belongs to a Spur Gear. While it is set, the
+- **UI-9** "Mesh with" is an optional selection right after the curve. It accepts a feature,
+  picked in the timeline, and sketch circles and arcs; VAL-15 checks that it is a Spur Gear
+  or a Spur Gear's curve. While it is set, the
   start rotation input is disabled, and the info box names the mate and shows the actual and
   ideal center distance (DER-10). It is not remembered for the next gear (UI-7).
 
@@ -264,7 +265,7 @@ it a solid.
 | VAL-12 | Operation is Join and the gear touches no body | error |
 | VAL-14 | The outline cannot be built: the print offset removes the root circle or folds the root curve back on itself; no flank remains between root curve and tip circle; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
 
-| VAL-15 | "Mesh with" is not the curve of a Spur Gear earlier in the timeline in the same component, or is this gear's own curve. If several gears use the curve, the latest one before this gear is the mate | error |
+| VAL-15 | "Mesh with" is not a Spur Gear, or the curve of one, earlier in the timeline in the same component; or it is this gear or its own curve. If several gears use the picked curve, the latest one before this gear is the mate | error |
 | VAL-16 | Module or pressure angle differs from the mate's | error |
 | VAL-17 | The planes of the two curves are not parallel, or the centers coincide in the mate's plane | error |
 | VAL-18 | The center distance differs from the ideal one: \|a − a_w\| > 0.01·m | warning |
@@ -319,7 +320,8 @@ Resolved on 2026-10-11, after the spikes:
 Resolved on 2026-10-13, after SPIKE-6:
 
 - **D-22** Gears are aligned by picking the gear to mesh with (IN-17), not a reference line.
-  A line only aligns pairs; a mate also works along a chain of gears.
+  A line only aligns pairs; a mate also works along a chain of gears. The mate can be picked
+  in the timeline or by its curve; the curve needs its sketch to be visible.
 - **D-23** A gear with a mate depends on the mate's custom feature. Depending on the mate's
   parameters is rejected by Fusion, and depending on its body breaks recomputing (SPIKE-6).
 - **D-24** Deleting a gear deletes the gears meshing with it (FEA-13). Accepted.
@@ -344,6 +346,13 @@ of the add-in (2026-10-11):
   (FEA-10): works.
 - **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): works.
 - **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
+
+Open, for "Mesh with" (draft 0.9):
+
+- **CHK-7** Whether a selection input with Fusion's "Features" filter accepts a custom feature
+  clicked in the timeline, and which object it returns (the custom feature, or one of the
+  features it contains). To be checked first when implementing IN-17. If it does not work,
+  IN-17 accepts curves only.
 
 ## 13. Architecture and testing
 
