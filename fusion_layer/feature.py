@@ -27,6 +27,13 @@ PANEL_ID = 'SolidCreatePanel'
 
 NEW_BODY, JOIN = 'New Body', 'Join'
 PROFILE_PLANE, OFFSET, OBJECT = 'Profile Plane', 'Offset', 'Object'   # IN-18
+DISTANCE, TO_OBJECT = 'Distance', 'To Object'                         # IN-22, IN-25
+#: Start and extent objects (IN-20, IN-23, IN-26): dialog input and dependency ids, labels.
+OBJECT_INPUTS = {'start_object': 'Start object', 'extent_object': 'Extent object',
+                 'extent_object2': 'Extent object (side 2)'}
+#: The numeric input each object input follows in the dialog (UI-10, UI-11).
+OBJECT_AFTER = {'start_offset': 'start_object', 'thickness': 'extent_object',
+                'thickness2': 'extent_object2'}
 NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or move the curve '
                    'onto a body.')
 
@@ -36,6 +43,7 @@ PARAMS = (
     ('module', 'Module', 'length', '1 mm'),
     ('start_offset', 'Start offset', 'length', '0 mm'),
     ('thickness', 'Thickness', 'length', '5 mm'),
+    ('thickness2', 'Thickness (side 2)', 'length', '5 mm'),
     ('bore', 'Bore diameter', 'length', '0 mm'),
     ('rotation', 'Start rotation (% of pitch)', 'number', '0'),
     ('pressure_angle', 'Pressure angle', 'angle', '20 deg'),
@@ -124,25 +132,59 @@ class NothingToJoin(gearcore.GearError):
 
 
 @dataclasses.dataclass
+class Extent:
+    """Where the gear begins and ends (GEO-12): start, direction and extents."""
+    start: str = PROFILE_PLANE                # IN-18
+    direction: str = gearcore.ONE_SIDE        # IN-21
+    flip: bool = False                        # IN-13
+    extent: str = DISTANCE                    # IN-22
+    extent2: str = DISTANCE                   # IN-25
+    objects: dict = dataclasses.field(default_factory=dict)   # by OBJECT_INPUTS id
+
+    def needed(self) -> list:
+        """The ids of the objects this extent uses."""
+        ids = []
+        if self.start == OBJECT:
+            ids.append('start_object')
+        if self.direction != gearcore.SYMMETRIC and self.extent == TO_OBJECT:
+            ids.append('extent_object')
+        if self.direction == gearcore.TWO_SIDES and self.extent2 == TO_OBJECT:
+            ids.append('extent_object2')
+        return ids
+
+
+def stored_extent(feature: adsk.fusion.CustomFeature) -> Extent:
+    """A gear's extent, from its named values and dependencies (ARC-7)."""
+    objects = {}
+    for object_id in OBJECT_INPUTS:
+        dependency = feature.dependencies.itemById(object_id)
+        objects[object_id] = dependency.entity if dependency else None
+    return Extent(named_value(feature, 'start', PROFILE_PLANE),
+                  named_value(feature, 'direction', gearcore.ONE_SIDE),
+                  named_value(feature, 'flip', '0') == '1',
+                  named_value(feature, 'extent', DISTANCE), named_value(feature, 'extent2', DISTANCE),
+                  objects)
+
+
+@dataclasses.dataclass
 class Settings:
     """What the dialog currently says."""
     curve: typing.Any
     operation: str
-    flip: bool
     expressions: dict
     values: dict
-    start: str = PROFILE_PLANE   # IN-18
-    start_object: typing.Any = None
+    extent: Extent = dataclasses.field(default_factory=Extent)
 
 
 @dataclasses.dataclass
 class Evaluation:
-    frame: typing.Optional[geometry.Frame] = None
+    frame: typing.Optional[geometry.Frame] = None    # at the gear's lowest plane (GEO-12)
     params: typing.Optional[gearcore.GearParams] = None
     outline: typing.Optional[gearcore.Outline] = None
     issues: list = dataclasses.field(default_factory=list)
     train: typing.Optional[layout.Train] = None
-    object_distance: typing.Optional[float] = None   # cm, from the curve's plane to the start object
+    extent: typing.Optional[Extent] = None
+    heights: dict = dataclasses.field(default_factory=dict)   # cm, of the objects used
 
 
 def feature_occurrence(feature: adsk.fusion.CustomFeature):
@@ -163,14 +205,14 @@ def feature_occurrence(feature: adsk.fusion.CustomFeature):
         return None
 
 
-def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_object=None,
-             known_distance: typing.Optional[float] = None) -> Evaluation:
+def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None,
+             known: typing.Optional[dict] = None) -> Evaluation:
     """Run the gear math for a curve and parameter values. target is the gear's
-    component and the occurrence of it (FEA-14); start and start_object are IN-18
-    and IN-20. known_distance is the start object's distance from an earlier
-    evaluation, used if the object is not valid right now. Never raises for bad
-    input."""
-    ev = Evaluation()
+    component and the occurrence of it (FEA-14). known holds the heights of objects
+    from an earlier evaluation, used for objects that are not valid right now.
+    Never raises for bad input."""
+    ev = Evaluation(extent=extent or Extent())
+    extent = ev.extent
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
         ev.issues.append(gearcore.Issue('VAL-1', gearcore.ERROR, 'Select a sketch circle or arc.'))
         return ev
@@ -179,30 +221,52 @@ def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_obje
     except geometry.AmbiguousOccurrence as e:
         ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
         return ev
-    if start != PROFILE_PLANE:   # GEO-12: move to the start plane
-        distance = values.get('start_offset', 0.0)
-        if start == OBJECT:
-            if start_object is not None and start_object.isValid:
-                try:
-                    ev.object_distance = geometry.start_distance(start_object, ev.frame, *target)
-                except geometry.AmbiguousOccurrence as e:
-                    ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
-                    return ev
-                except geometry.StartObjectError as e:
-                    ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
-                    return ev
-            elif known_distance is not None:
-                # While a Join preview is shown, a face of the body it joins has been
-                # replaced, and the selected face is not valid until the preview goes.
-                # When editing, the gear keeps its start object without it being
-                # selected (_keeps_start_object).
-                ev.object_distance = known_distance
-            else:
-                ev.issues.append(gearcore.Issue('VAL-25', gearcore.ERROR, 'Select the start object.'))
+    for object_id in extent.needed():
+        entity = extent.objects.get(object_id)
+        if entity is not None and entity.isValid:
+            try:
+                ev.heights[object_id] = geometry.object_height(entity, ev.frame, *target)
+            except geometry.AmbiguousOccurrence as e:
+                ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
                 return ev
-            distance += ev.object_distance
-        ev.frame = geometry.shifted(ev.frame, distance)
-    ev.params = to_gear_params(ev.frame, values)
+            except geometry.ObjectError as e:
+                ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
+                return ev
+        elif known and object_id in known:
+            # While a Join preview is shown, a face of the body it joins has been
+            # replaced, and the selected face is not valid until the preview goes.
+            # When editing, the gear keeps its objects without them being selected
+            # (_keeps_object).
+            ev.heights[object_id] = known[object_id]
+        else:
+            ev.issues.append(gearcore.Issue('VAL-25', gearcore.ERROR, 'Select the {}.'.format(
+                OBJECT_INPUTS[object_id].lower())))
+            return ev
+
+    # GEO-12: from the start plane by the direction and the extents, in mm.
+    start = 0.0
+    if extent.start != PROFILE_PLANE:
+        start = (values.get('start_offset', 0.0) + ev.heights.get('start_object', 0.0)) / CM
+
+    def side(object_id: str, pid: str, kind: str) -> gearcore.Side:
+        if kind == TO_OBJECT:
+            return gearcore.Side(height=ev.heights[object_id] / CM)
+        return gearcore.Side(distance=values.get(pid, 0.0) / CM)
+
+    first = side('extent_object', 'thickness',
+                 DISTANCE if extent.direction == gearcore.SYMMETRIC else extent.extent)
+    second = (side('extent_object2', 'thickness2', extent.extent2)
+              if extent.direction == gearcore.TWO_SIDES else None)
+    ev.issues = gearcore.extent_issues(extent.direction, first, second)
+    if ev.issues:
+        return ev
+    low, high = gearcore.span(start, extent.direction, extent.flip, first, second)
+    if high - low < 1e-6:
+        ev.issues.append(gearcore.Issue('VAL-27', gearcore.ERROR, 'The gear has no thickness: its '
+                                        'start and end are on the same plane.'))
+        return ev
+    ev.frame = geometry.shifted(ev.frame, low * CM)
+    ev.params = dataclasses.replace(to_gear_params(ev.frame, values), thickness=high - low)
     ev.issues = gearcore.validate(ev.params)
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
         # The rotation is relative to the curve's own frame, so it holds in the
@@ -241,6 +305,9 @@ def info_text(ev: Evaluation) -> str:
         if d.tip_thickness is not None:
             lines.append('Tooth thickness {:.3f}, at the tip {:.3f} mm'.format(
                 d.tooth_thickness, d.tip_thickness))
+        e = ev.extent
+        if e and (e.direction != gearcore.ONE_SIDE or e.extent == TO_OBJECT):   # UI-11
+            lines.append('Face width {:.3f} mm'.format(ev.params.thickness))
     if oriented_by_layout(ev):   # UI-9
         o = ev.train.orientation
         by = ('oriented by its start line' if o.start_line else
@@ -263,8 +330,11 @@ class SpurGearFeature:
         #: Settings of the last gear created, to start the next one with (UI-7).
         #: Kept in memory only.
         self._last_used: dict = {}
-        #: The start object's distance from the last evaluation where it was valid.
-        self._object_distance: typing.Optional[float] = None
+        #: Heights of the start and extent objects from the last evaluation where
+        #: they were valid, by object id.
+        self._known: dict = {}
+        #: Object inputs the user changed in this dialog.
+        self._changed: set = set()
         self._logged: set = set()   # reasons for a disabled OK, logged once per dialog
 
         for cid, callback in ((CREATE_ID, self._on_create_created), (EDIT_ID, self._on_edit_created)):
@@ -322,8 +392,8 @@ class SpurGearFeature:
 
     def _build_dialog(self, command: adsk.core.Command):
         self._command = command
-        self._object_distance = None
-        self._start_object_changed = False
+        self._known = {}
+        self._changed = set()
         self._logged = set()
         inputs = command.commandInputs
         feature = self._editing
@@ -335,42 +405,45 @@ class SpurGearFeature:
         operation = inputs.addDropDownCommandInput(
             'operation', 'Operation', adsk.core.DropDownStyles.TextListDropDownStyle)
         if feature:
-            current = feature.customNamedValues.value('operation')
-            flip = feature.customNamedValues.value('flip') == '1'
+            current, extent = feature.customNamedValues.value('operation'), stored_extent(feature)
         else:
             current = self._last_used.get('operation', NEW_BODY)
-            flip = self._last_used.get('flip', False)
+            extent = self._last_used.get('extent', Extent())
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
-        start = named_value(feature, 'start', PROFILE_PLANE) if feature else \
-            self._last_used.get('start', PROFILE_PLANE)
 
         # The common inputs first, the rarely changed ones in a group that is only
-        # open if one of them is not at its default (UI-8).
+        # open if one of them is not at its default (UI-8). Start, direction and
+        # extents are placed like Extrude's (UI-10, UI-11).
         advanced = []
         for pid, label, kind, default in PARAMS:
             if pid in ADVANCED:
                 advanced.append((pid, label, kind, default))
                 continue
-            if pid == 'start_offset':   # UI-10: Start comes right before Thickness
-                choice = inputs.addDropDownCommandInput(
-                    'start', 'Start', adsk.core.DropDownStyles.TextListDropDownStyle)
-                for name in (PROFILE_PLANE, OFFSET, OBJECT):
-                    choice.listItems.add(name, name == start)
-            value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
             if pid == 'start_offset':
-                if feature and parameter_of(feature, pid) is None:
-                    value_input.isEnabled = False   # FEA-5
-                    value_input.tooltip = ('This gear was made before the start offset existed. '
-                                           'Create it again to use one.')
-                start_object = inputs.addSelectionInput(
-                    'start_object', 'Start object', 'Select a planar face, construction plane or point')
+                self._add_choice(inputs, 'start', 'Start', (PROFILE_PLANE, OFFSET, OBJECT), extent.start)
+            elif pid == 'thickness':
+                self._add_choice(inputs, 'direction', 'Direction',
+                                 (gearcore.ONE_SIDE, gearcore.TWO_SIDES, gearcore.SYMMETRIC),
+                                 extent.direction)
+                inputs.addBoolValueInput('flip', 'Flip side', True, '', extent.flip)
+                self._add_choice(inputs, 'extent', 'Extent', (DISTANCE, TO_OBJECT), extent.extent)
+            elif pid == 'thickness2':
+                self._add_choice(inputs, 'extent2', 'Extent (side 2)', (DISTANCE, TO_OBJECT),
+                                 extent.extent2)
+            value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
+            if feature and parameter_of(feature, pid) is None:   # FEA-5
+                value_input.isEnabled = False
+                value_input.tooltip = ('This gear was made before this input existed. Create it '
+                                       'again to use it.')
+            if pid in OBJECT_AFTER:
+                object_id = OBJECT_AFTER[pid]
+                selection = inputs.addSelectionInput(object_id, OBJECT_INPUTS[object_id],
+                                                     'Select a planar face, construction plane or point')
                 for name in ('PlanarFaces', 'ConstructionPlanes', 'Vertices', 'SketchPoints',
                              'ConstructionPoints'):
-                    start_object.addSelectionFilter(name)
-                start_object.setSelectionLimits(0, 1)
-            if pid == 'bore':
-                inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
+                    selection.addSelectionFilter(name)
+                selection.setSelectionLimits(0, 1)
         group = inputs.addGroupCommandInput('advanced', 'Advanced')
         changed = False
         for pid, label, kind, default in advanced:
@@ -392,6 +465,13 @@ class SpurGearFeature:
             events.append((command.activate, adsk.core.CommandEventHandler, self._on_activate))
         for event, base_class, callback in events:
             self._listen(event, base_class, callback, self._command_handlers)
+
+    @staticmethod
+    def _add_choice(inputs: adsk.core.CommandInputs, input_id: str, label: str, names, current: str):
+        choice = inputs.addDropDownCommandInput(input_id, label,
+                                                adsk.core.DropDownStyles.TextListDropDownStyle)
+        for name in names:
+            choice.listItems.add(name, name == current)
 
     def _initial(self, pid: str, kind: str, default: str):
         """What a numeric input starts with, and whether that differs from its default:
@@ -430,35 +510,43 @@ class SpurGearFeature:
                 return None
             expressions[pid], values[pid] = value_input.expression, value_input.value
         curve_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('curve'))
-        operation = adsk.core.DropDownCommandInput.cast(inputs.itemById('operation')).selectedItem.name
         curve = curve_input.selection(0).entity if curve_input.selectionCount else None
+
+        def choice(input_id: str) -> str:
+            return adsk.core.DropDownCommandInput.cast(inputs.itemById(input_id)).selectedItem.name
+
+        objects = {}
+        for object_id in OBJECT_INPUTS:
+            selection = adsk.core.SelectionCommandInput.cast(inputs.itemById(object_id))
+            objects[object_id] = selection.selection(0).entity if selection.selectionCount else None
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
-        start = adsk.core.DropDownCommandInput.cast(inputs.itemById('start')).selectedItem.name
-        object_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('start_object'))
-        start_object = object_input.selection(0).entity if object_input.selectionCount else None
-        return Settings(curve, operation, flip, expressions, values, start, start_object)
+        extent = Extent(choice('start'), choice('direction'), flip, choice('extent'), choice('extent2'),
+                        objects)
+        return Settings(curve, choice('operation'), expressions, values, extent)
 
     def _evaluate(self, settings: Settings) -> Evaluation:
-        known = self._object_distance
-        if known is None and self._keeps_start_object(settings):
-            # Where the gear started when it was last created or edited; good enough
-            # for the dialog's checks. The gear itself is built from the object.
-            stored = named_value(self._editing, 'start_distance', '')
-            known = float(stored) if stored else 0.0
-        ev = evaluate(settings.curve, settings.values, self._target(), settings.start,
-                      settings.start_object, known)
-        if settings.start_object is not None and settings.start_object.isValid:
-            self._object_distance = ev.object_distance
+        known = dict(self._known)
+        for object_id in OBJECT_INPUTS:
+            if object_id not in known and self._keeps_object(settings, object_id):
+                # Its height when the gear was last created or edited; good enough for
+                # the dialog's checks. The gear itself is built from the object.
+                stored = named_value(self._editing, 'height_' + object_id, '')
+                known[object_id] = float(stored) if stored else 0.0
+        ev = evaluate(settings.curve, settings.values, self._target(), settings.extent, known)
+        for object_id, entity in settings.extent.objects.items():
+            if entity is not None and entity.isValid and object_id in ev.heights:
+                self._known[object_id] = ev.heights[object_id]
         return ev
 
-    def _keeps_start_object(self, settings: Settings) -> bool:
-        """Whether an edited gear keeps the start object it has. The edit dialog does
-        not select it: a face of a body the gear joins exists only before the join,
-        at the gear's place in the timeline, and selecting a face that a preview
-        replaces disables OK (CHK-9). Picking an object replaces it."""
-        if not (self._editing and settings.start == OBJECT and settings.start_object is None):
+    def _keeps_object(self, settings: Settings, object_id: str) -> bool:
+        """Whether an edited gear keeps a start or extent object it has. The edit
+        dialog does not select it: a face of a body the gear joins exists only before
+        the join, at the gear's place in the timeline, and selecting a face that a
+        preview replaces disables OK (CHK-9). Picking an object replaces it."""
+        extent = settings.extent
+        if not (self._editing and object_id in extent.needed() and extent.objects.get(object_id) is None):
             return False
-        return not self._start_object_changed and bool(self._editing.dependencies.itemById('start_object'))
+        return object_id not in self._changed and bool(self._editing.dependencies.itemById(object_id))
 
     def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
         """VAL-12, checked without building the gear: if not even a cylinder of the
@@ -479,7 +567,7 @@ class SpurGearFeature:
                 own_body = None
         component = self._target()[0]
         envelope = geometry.envelope_body(
-            ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
+            ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, False)
         if geometry.touching_bodies(component, envelope, ignore=own_body):
             return ''
         return NOTHING_TO_JOIN
@@ -493,27 +581,37 @@ class SpurGearFeature:
             note = note or self._join_problem(settings, ev)
             # UI-9: the layout sketch sets the rotation; the start rotation is not used.
             find_input(inputs, 'rotation').isEnabled = not oriented_by_layout(ev)
-            # UI-10: show only what the chosen start needs.
-            find_input(inputs, 'start_offset').isVisible = settings.start != PROFILE_PLANE
-            inputs.itemById('start_object').isVisible = settings.start == OBJECT
-            if self._keeps_start_object(settings):
-                text += '<br/>Start object: as before. Pick another one to change it.'
+            # UI-10, UI-11: show only what the chosen start, direction and extents use.
+            e = settings.extent
+            symmetric, two = e.direction == gearcore.SYMMETRIC, e.direction == gearcore.TWO_SIDES
+            shown = {'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
+                     'flip': not symmetric and (two or e.extent == DISTANCE),
+                     'extent': not symmetric,
+                     'thickness': symmetric or e.extent == DISTANCE,
+                     'extent_object': not symmetric and e.extent == TO_OBJECT,
+                     'extent2': two, 'thickness2': two and e.extent2 == DISTANCE,
+                     'extent_object2': two and e.extent2 == TO_OBJECT}
+            for input_id, visible in shown.items():
+                find_input(inputs, input_id).isVisible = visible
+            kept = [OBJECT_INPUTS[i] for i in OBJECT_INPUTS if self._keeps_object(settings, i)]
+            if kept:
+                text += '<br/>{}: as before. Pick another one to change it.'.format(', '.join(kept))
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
-        if args.input.id == 'start_object':
-            self._object_distance = None
-            self._start_object_changed = True
+        if args.input.id in OBJECT_INPUTS:
+            self._known.pop(args.input.id, None)
+            self._changed.add(args.input.id)
         if args.input.id != 'info':
             self._update_dialog(self._command.commandInputs)
 
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
         if args.activeInput.id == 'curve':
             args.isSelectable = geometry.is_gear_curve(geometry.native(args.selection.entity))
-        elif args.activeInput.id == 'start_object':
-            args.isSelectable = geometry.is_start_object(args.selection.entity)
+        elif args.activeInput.id in OBJECT_INPUTS:
+            args.isSelectable = geometry.is_height_object(args.selection.entity)
 
     def _on_validate(self, args: adsk.core.ValidateInputsEventArgs):
         settings = self._read(args.inputs)
@@ -543,7 +641,7 @@ class SpurGearFeature:
                 args.command.commandInputs.itemById('curve'))
             if not selection.addSelection(dependency.entity):
                 log('could not select the curve of ' + self._editing.name)
-        # The start object is not selected; see _keeps_start_object.
+        # Start and extent objects are not selected; see _keeps_object.
 
     def _on_destroy(self, args: adsk.core.CommandEventArgs):
         self._command = None
@@ -556,10 +654,12 @@ class SpurGearFeature:
         # made the gear disappear.
         settings = self._read(args.command.commandInputs)
         if settings is not None:
-            if settings.operation == JOIN and adsk.fusion.BRepFace.cast(self._start_object(settings)):
+            faces = [adsk.fusion.BRepFace.cast(settings.extent.objects.get(i))
+                     for i in settings.extent.needed()]
+            if settings.operation == JOIN and any(faces):
                 # Joining in the preview replaces the faces of the joined body, and Fusion
-                # then disables OK because the selected start face is no longer valid.
-                # The preview shows the gear as its own body; OK joins it (CHK-9).
+                # then disables OK because a selected face is no longer valid. The
+                # preview shows the gear as its own body; OK joins it (CHK-9).
                 settings = dataclasses.replace(settings, operation=NEW_BODY)
             try:
                 if self._editing:
@@ -582,7 +682,8 @@ class SpurGearFeature:
                 self._apply_edit(self._editing, settings)
             elif self._create(settings):
                 self._last_used = {
-                    'operation': settings.operation, 'flip': settings.flip, 'start': settings.start,
+                    'operation': settings.operation,
+                    'extent': dataclasses.replace(settings.extent, objects={}),
                     'params': {pid: (settings.expressions[pid], settings.values[pid])
                                for pid, _, _, _ in PARAMS}}
         except NothingToJoin as e:
@@ -591,8 +692,7 @@ class SpurGearFeature:
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
         component, occurrence = self._target()
-        ev = evaluate(settings.curve, settings.values, (component, occurrence), settings.start,
-                      settings.start_object)
+        ev = evaluate(settings.curve, settings.values, (component, occurrence), settings.extent)
         if ev.outline is None:
             return None
         features = component.features
@@ -600,8 +700,9 @@ class SpurGearFeature:
         base = features.baseFeatures.add()
         base.startEdit()
         try:
-            geometry.build_body(component, base, ev.frame, ev.outline, ev.params.thickness,
-                                settings.flip)
+            # The frame is at the gear's lowest plane, so it always extends along the
+            # normal (GEO-12).
+            geometry.build_body(component, base, ev.frame, ev.outline, ev.params.thickness, False)
         finally:
             base.finishEdit()
         last = base
@@ -618,20 +719,30 @@ class SpurGearFeature:
                 settings.expressions[pid]), unit(kind), True)
         inp.setStartAndEndFeatures(base, last)
         feature = features.customFeatures.add(inp)
-        feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         feature.customNamedValues.addOrSetValue('occurrence', occurrence.entityToken if occurrence else '')
-        feature.customNamedValues.addOrSetValue('start', settings.start)
-        self._store_start_distance(feature, ev)
-        self._set_dependencies(feature, settings.curve, ev.train, self._start_object(settings))
+        self._store_extent(feature, settings.extent)
+        self._store_heights(feature, ev)
+        objects = {i: settings.extent.objects.get(i) for i in settings.extent.needed()}
+        self._set_dependencies(feature, settings.curve, ev.train, objects)
         return feature
 
     @staticmethod
-    def _store_start_distance(feature: adsk.fusion.CustomFeature, ev: Evaluation):
-        """For the edit dialog (_evaluate). Written in the command, never during a
-        compute, which must not write to the feature (SPIKE-6)."""
-        if ev.object_distance is not None:
-            feature.customNamedValues.addOrSetValue('start_distance', repr(ev.object_distance))
+    def _store_extent(feature: adsk.fusion.CustomFeature, extent: Extent):
+        """Start, direction, extents and flip side as named values (ARC-7)."""
+        values = feature.customNamedValues
+        values.addOrSetValue('flip', '1' if extent.flip else '0')
+        values.addOrSetValue('start', extent.start)
+        values.addOrSetValue('direction', extent.direction)
+        values.addOrSetValue('extent', extent.extent)
+        values.addOrSetValue('extent2', extent.extent2)
+
+    @staticmethod
+    def _store_heights(feature: adsk.fusion.CustomFeature, ev: Evaluation):
+        """The objects' heights, for the edit dialog (_evaluate). Written in the
+        command, never during a compute, which must not write to the feature (SPIKE-6)."""
+        for object_id, height in ev.heights.items():
+            feature.customNamedValues.addOrSetValue('height_' + object_id, repr(height))
 
     @staticmethod
     def _join(component: adsk.fusion.Component, base: adsk.fusion.BaseFeature):
@@ -679,24 +790,20 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', operation)
 
     @staticmethod
-    def _start_object(settings: Settings):
-        return settings.start_object if settings.start == OBJECT else None
-
-    @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, curve,
-                          train: typing.Optional[layout.Train], start_object=None,
-                          keep_start_object: bool = False):
-        """Point the feature at its curve and start object (FEA-2) and its layout
-        sketch (FEA-12). A dependency can only refer to the design as it was before
-        the feature."""
+                          train: typing.Optional[layout.Train], objects: dict,
+                          keep: typing.Collection[str] = ()):
+        """Point the feature at its curve and its start and extent objects (FEA-2) and
+        its layout sketch (FEA-12). objects are the objects to set, by id; those in
+        keep stay as they are, all others are removed. A dependency can only refer to
+        the design as it was before the feature."""
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
             wanted = {'curve': curve}
-            if start_object is not None:
-                wanted['start_object'] = start_object
+            wanted.update({i: e for i, e in objects.items() if e is not None})
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid
                 # argument entity"). Try the entity as it was selected, then the
@@ -728,7 +835,7 @@ class SpurGearFeature:
                     raise error
             # 'mate' is left over from the unreleased Mesh with version.
             stale = ['mate'] + (['layout'] if train is None or train.own_sketch else [])
-            stale += [] if start_object is not None or keep_start_object else ['start_object']
+            stale += [i for i in OBJECT_INPUTS if i not in wanted and i not in keep]
             for dep_id in stale:
                 existing = feature.dependencies.itemById(dep_id)
                 if existing:
@@ -764,12 +871,13 @@ class SpurGearFeature:
                 parameter = parameter_of(feature, pid)
                 if parameter is not None:   # FEA-5: missing on gears made before it existed
                     parameter.expression = settings.expressions[pid]
-            feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
-            feature.customNamedValues.addOrSetValue('start', settings.start)
-            keep = self._keeps_start_object(settings)
+            self._store_extent(feature, settings.extent)
+            needed = settings.extent.needed()
+            keep = {i for i in needed if self._keeps_object(settings, i)}
+            objects = {i: settings.extent.objects.get(i) for i in needed if i not in keep}
             self._set_dependencies(feature, settings.curve, self._evaluate(settings).train,
-                                   None if keep else self._start_object(settings), keep)
-            self._store_start_distance(feature, self._recompute(feature))
+                                   objects, keep)
+            self._store_heights(feature, self._recompute(feature))
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)
         finally:
@@ -783,21 +891,17 @@ class SpurGearFeature:
         if curve is None or not curve.isValid:
             raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
         values = {pid: parameter_value(feature, pid, kind, default) for pid, _, kind, default in PARAMS}
-        start = named_value(feature, 'start', PROFILE_PLANE)
-        dependency = feature.dependencies.itemById('start_object')
-        start_object = dependency.entity if dependency else None
-        ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)), start,
-                      start_object)
+        ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)),
+                      stored_extent(feature))
         if ev.outline is None:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))
-        flip = feature.customNamedValues.value('flip') == '1'
         base = base_feature(feature)
         component = feature.parentComponent
         base.startEdit()
         try:
             old = geometry.source_bodies(base)[0]
-            new = geometry.build_body(component, base, ev.frame, ev.outline, ev.params.thickness, flip)
+            new = geometry.build_body(component, base, ev.frame, ev.outline, ev.params.thickness, False)
             base.updateBody(old, adsk.fusion.TemporaryBRepManager.get().copy(new))
             new.deleteMe()
         finally:

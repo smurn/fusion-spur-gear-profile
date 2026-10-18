@@ -158,12 +158,13 @@ def frame_in(curve, component: adsk.fusion.Component, occurrence) -> Frame:
     return from_assembly(to_assembly(frame, occurrence_of(curve, own)), occurrence)
 
 
-class StartObjectError(gearcore.GearError):
-    """The start object cannot be used (VAL-26)."""
+class ObjectError(gearcore.GearError):
+    """A start or extent object cannot be used (VAL-26)."""
 
 
-def _start_geometry(entity):
-    """Point, normal (None for a point) and component of a start object (IN-20),
+def _object_geometry(entity):
+    """Point, normal (None for a point) and component of a start or extent object
+    (IN-20, IN-23, IN-26),
     in that component's coordinates. None if the entity is no start object."""
     face = adsk.fusion.BRepFace.cast(entity)
     if face:
@@ -186,32 +187,32 @@ def _start_geometry(entity):
     return None
 
 
-def is_start_object(entity) -> bool:
+def is_height_object(entity) -> bool:
     """A planar face, construction plane, vertex, sketch point or construction point."""
-    return entity is not None and _start_geometry(native(entity)) is not None
+    return entity is not None and _object_geometry(native(entity)) is not None
 
 
-def start_distance(entity, frame: Frame, component: adsk.fusion.Component, occurrence) -> float:
-    """GEO-12: the distance, in cm along the frame's normal, from the frame's plane
-    to the start object's plane or point. frame is in the coordinates of the
-    gear's component; occurrence is the gear component's. Raises StartObjectError
-    for a plane that is not parallel."""
-    found = _start_geometry(native(entity))
+def object_height(entity, frame: Frame, component: adsk.fusion.Component, occurrence) -> float:
+    """GEO-12: the height, in cm along the frame's normal, of a start or extent
+    object's plane or point above the frame's plane. frame is in the coordinates of the
+    gear's component; occurrence is the gear component's. Raises ObjectError for a
+    plane that is not parallel."""
+    found = _object_geometry(native(entity))
     if found is None:
-        raise StartObjectError('The start object must be a planar face, a construction plane or '
-                               'a point.')
+        raise ObjectError('Start and extent objects must be planar faces, construction planes '
+                          'or points.')
     point, normal, own = found
     if own != component:
         points, vectors = _up([point], [normal] if normal else [], occurrence_of(entity, own))
         points, vectors = _down(points, vectors, occurrence)
         point, normal = points[0], (vectors[0] if vectors else None)
     if normal is not None and normal.crossProduct(frame.normal).length > 1e-6:
-        raise StartObjectError('The start plane must be parallel to the sketch plane.')
+        raise ObjectError('Start and extent planes must be parallel to the sketch plane.')
     return frame.origin.vectorTo(point).dotProduct(frame.normal)
 
 
 def shifted(frame: Frame, distance: float) -> Frame:
-    """The frame moved along its normal by distance (cm), for the start plane (GEO-12)."""
+    """The frame moved along its normal by distance (cm), to the gear's lowest plane (GEO-12)."""
     o, n = frame.origin, frame.normal
     origin = adsk.core.Point3D.create(o.x + n.x * distance, o.y + n.y * distance, o.z + n.z * distance)
     return dataclasses.replace(frame, origin=origin)
