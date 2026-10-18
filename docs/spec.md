@@ -340,13 +340,16 @@ other (D-27).
   selected, and the info box says it is kept. A face of a body the gear joins exists only
   before the join, so it cannot be selected at the end of the timeline (CHK-9).
 - **UI-11** Direction (IN-21) follows the start inputs; with Symmetric, Measurement (IN-27)
-  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side and Extent Type
-  (IN-22). Then Thickness, or the extent object and its offset. With Two Sides, Extent Type,
-  Thickness, the extent object and the offset of side 2 follow. Start, Direction and Extent
-  Type are drop-downs with an icon for each choice, as in Extrude. Each input is shown only when
-  it is used. Extent objects
-  behave like the start object when a gear is edited (UI-10). The info box shows the face
-  width when it differs from the thickness input.
+  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side. Then, as in
+  Extrude: with One Side, Extent Type (IN-22), Thickness, or the extent object and its offset;
+  with Two Sides, the same in two foldable groups, Side 1 and Side 2; with Symmetric, the
+  Thickness. Switching between One Side and Two Sides keeps what was entered for side 1. Each
+  input is shown only when it is used. Start, Direction and Extent Type are drop-downs with
+  an icon for each choice, as in Extrude. Choosing Object as the start, or To Object as an
+  extent type, makes that object's selection active, so the next click picks the object.
+  Extent objects behave like the start object when a gear is edited (UI-10). The info box
+  shows the face width when it differs from the thickness input.
+- **UI-12** All icons have versions for Fusion's dark theme.
 
 ## 10. Validation
 
