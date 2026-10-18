@@ -18,7 +18,8 @@ SPIKE-7). That tied the gears' order in the timeline to the chain, so it was rep
 layout sketch (SPIKE-8). The "Mesh with" version is tagged `mesh-with-live-link` in git.
 Version 0.9 adds the start, direction and extent options and creating gears in the active
 component.
-Retired IDs: SKT-1 to SKT-12, IN-16, IN-17, VAL-9, VAL-15 to VAL-19, DER-10, DER-11, FEA-15,
+Retired IDs: SKT-1 to SKT-12, IN-13 (flip side, replaced by negative distances, D-36), IN-16,
+IN-17, VAL-9, VAL-15 to VAL-19, DER-10, DER-11, FEA-15,
 D-1, D-4, D-6, D-17, D-22 to D-26, CHK-7, CHK-8, SPIKE-1 to SPIKE-4. VAL-13 was never used.
 FEA-12 to FEA-14, UI-9 and ARC-8 had other meanings in the "Mesh with" draft, which was never
 released.
@@ -100,8 +101,7 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-9 | Print offset δ | 0 mm | any; positive adds material; moves the toothed profile only (GEO-7); limited by VAL-14 |
 | IN-10 | Start rotation | 0 % | 0–100 % of one tooth pitch; 100 % wraps to 0 %. Used only by a gear whose orientation does not come from its layout sketch (TRN-10) |
 | IN-11 | Max profile deviation | 0.010 mm | 0.0001–0.1 mm |
-| IN-12 | Thickness | 5 mm | > 0. The distance of side 1 (One Side, Two Sides), or the whole face width (Symmetric); see GEO-12 |
-| IN-13 | Flip side | off | Off: side 1 extends from the start plane along the sketch normal. On: the opposite way. Used with One Side and Two Sides when the extent is a distance; side 2 always goes the other way |
+| IN-12 | Distance | 5 mm | any but 0. The distance of side 1 (One Side, Two Sides): positive along the sketch normal, negative against it. With Symmetric the face width (or half of it, IN-27), whatever its sign; see GEO-12 |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
 | IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
 | IN-18 | Start | Profile Plane | Profile Plane, Offset or Object, as in Extrude (GEO-12) |
@@ -110,10 +110,10 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-21 | Direction | One Side | One Side, Two Sides or Symmetric, as in Extrude (GEO-12) |
 | IN-22 | Extent Type | Distance | Distance or To Object, for side 1. Symmetric is always a distance |
 | IN-23 | Extent object | none | With To Object: as IN-20 |
-| IN-24 | Thickness, side 2 | 5 mm | > 0; with Two Sides and a distance for side 2 |
+| IN-24 | Distance, side 2 | 5 mm | any but 0; with Two Sides and a distance for side 2. Positive goes against the sketch normal, the opposite way to side 1 |
 | IN-25 | Extent Type, side 2 | Distance | Distance or To Object, with Two Sides |
 | IN-26 | Extent object, side 2 | none | With Two Sides and To Object for side 2: as IN-20 |
-| IN-27 | Measurement | Whole Length | With Symmetric: Whole Length (the thickness is the face width) or Half Length (the thickness goes each way from the start) |
+| IN-27 | Measurement | Whole Length | With Symmetric: Whole Length (the distance is the face width) or Half Length (the distance goes each way from the start) |
 | IN-28 | Extent offset | 0 mm | any; with To Object for side 1. Positive moves the end past the object, away from the start |
 | IN-29 | Extent offset, side 2 | 0 mm | any; as IN-28, for side 2 |
 
@@ -193,20 +193,21 @@ it a solid.
   curve, between two planes parallel to it. Heights are measured along the sketch normal.
   The start plane (IN-18) is at height s:
   - Profile Plane: 0, so the gear starts on the curve's plane.
-  - Offset: the start offset (IN-19), positive along the sketch normal, whatever IN-13 says.
+  - Offset: the start offset (IN-19), positive along the sketch normal.
   - Object: the height of the object's plane (a face or construction plane) or point, plus the
     start offset.
 
-  From there, by the direction (IN-21); "the way of side 1" is along the sketch normal, or
-  against it with IN-13:
-  - One Side: from s to the end of side 1: s plus the thickness (IN-12) the way of side 1, or,
-    with To Object (IN-22), the height of the extent object (IN-23), on whichever side it is,
-    moved by the extent offset (IN-28) away from s. If the object is on the start plane, away
-    from s means the way of side 1.
-  - Symmetric: from s − t to s + t, with t half the thickness for Whole Length (IN-27), or the
-    whole thickness for Half Length.
-  - Two Sides: side 1 as for One Side, and side 2 from s the other way, by its own thickness
-    (IN-24) or to its own object and offset (IN-25, IN-26, IN-29). The gear spans both.
+  From there, by the direction (IN-21):
+  - One Side: from s to the end of side 1: s plus the distance (IN-12), which may be negative,
+    or, with To Object (IN-22), the height of the extent object (IN-23), on whichever side it
+    is, moved by the extent offset (IN-28) away from s. If the object is on the start plane,
+    away from s means along the sketch normal.
+  - Symmetric: from s − t to s + t, with t half the distance for Whole Length (IN-27), or the
+    whole distance for Half Length, either without its sign.
+  - Two Sides: side 1 as for One Side, and side 2 from s minus its own distance (IN-24), so a
+    positive distance goes against the sketch normal, or to its own object and offset (IN-25,
+    IN-26, IN-29); for an object on the start plane, away from s means against the normal. The
+    gear spans both.
 
   The face width b is the distance between the lowest and the highest of these planes
   (VAL-27).
@@ -283,7 +284,7 @@ other (D-27).
   created or switched to Join; a later recompute keeps them, also if the gear no longer
   touches them.
 - **FEA-7** Editing the feature opens the dialog of §3 with the feature's current values,
-  including the curve selection, flip side and operation. OK applies the changes to the same
+  including the curve selection, the extrusion settings and the operation. OK applies the changes to the same
   feature. The operation can be switched between New Body and Join. While the dialog is open
   the gear stays visible and the timeline is not rolled back, so a curve created after the
   gear can be clicked. Such a curve cannot be the gear's curve; this case has not been tested.
@@ -325,9 +326,9 @@ other (D-27).
 - **UI-7** The create dialog starts with the inputs of the last gear that was created: the
   numeric inputs (as entered, so references to user parameters are kept) and the operation.
   The extrusion settings are not remembered; a new gear always starts with Profile Plane,
-  One Side, Distance, Whole Length, no flip, and the defaults of the start offset, the side 2
-  thickness and the To Object offsets (IN-13, IN-18 to IN-29 except IN-20, IN-23 and IN-26, which
-  are objects). The thickness is remembered. The curve and the start and extent objects are not
+  One Side, Distance, Whole Length, and the defaults of the start offset, the side 2 distance
+  and the To Object offsets (IN-18 to IN-29 except IN-20, IN-23 and IN-26, which are objects).
+  The distance of side 1 (IN-12) is remembered: it is the gear's face width. The curve and the start and extent objects are not
   remembered. This lasts until the add-in is stopped; it is not saved. If a remembered
   expression is not valid in the current design, its value is used.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
@@ -337,21 +338,20 @@ other (D-27).
   is disabled and the info box says so: how many gears the train has, how many circles this
   one touches, and whether the train is oriented by a start line or, without one, by its
   first circle.
-- **UI-10** Start (IN-18) is a drop-down right before Thickness. The start offset is shown for
+- **UI-10** Start (IN-18) is a drop-down right before Direction. The start offset is shown for
   Offset and Object, the start object selection for Object only. When a gear is edited, its
   start object stays as it is unless another one is picked; the dialog does not show it
   selected, and the info box says it is kept. A face of a body the gear joins exists only
   before the join, so it cannot be selected at the end of the timeline (CHK-9).
 - **UI-11** Direction (IN-21) follows the start inputs; with Symmetric, Measurement (IN-27)
-  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side. Then, as in
-  Extrude: with One Side, Extent Type (IN-22), Thickness, or the extent object and its offset;
-  with Two Sides, the same in two foldable groups, Side 1 and Side 2; with Symmetric, the
-  Thickness. Switching between One Side and Two Sides keeps what was entered for side 1. Each
+  follows it as a row of two icon buttons, as in Extrude. Then, as in Extrude: with One Side,
+  Extent Type (IN-22), Distance, or the extent object and its offset; with Two Sides, the same
+  in two foldable groups, Side 1 and Side 2; with Symmetric, the Distance. Switching between One Side and Two Sides keeps what was entered for side 1. Each
   input is shown only when it is used. Start, Direction and Extent Type are drop-downs with
   an icon for each choice, as in Extrude. Choosing Object as the start, or To Object as an
   extent type, makes that object's selection active, so the next click picks the object.
   Extent objects behave like the start object when a gear is edited (UI-10). The info box
-  shows the face width when it differs from the thickness input.
+  shows the resulting face width.
 - **UI-12** All icons have versions for Fusion's dark theme.
 
 ## 10. Validation
@@ -366,7 +366,7 @@ other (D-27).
 | VAL-6 | Arc mode generates no complete tooth | error |
 | VAL-7 | s_a < 0.2·m (rule of thumb) | warning |
 | VAL-8 | Undercut present (DER-7) | info |
-| VAL-10 | A thickness used as a distance (IN-12, IN-24) is ≤ 0 | error |
+| VAL-10 | A distance that is used (IN-12, IN-24) is 0 | error |
 | VAL-11 | Bore does not fit inside the root circle: d_B ≥ d_f | error |
 | VAL-12 | Operation is Join and the gear touches no body | error |
 | VAL-14 | The outline cannot be built: the print offset removes the root circle or folds the root curve back on itself; no flank remains between root curve and tip circle; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
@@ -418,8 +418,9 @@ Resolved on 2026-10-11, after the spikes:
 - **D-12** Operations are New Body and Join (IN-15).
 - **D-13** The add-in is self-contained and does not share a framework with other add-ins.
 - **D-14** No tooth-count limit or warning. A recompute took 1.6 s at z = 200 in the spike.
-- **D-15** Default thickness is 5 mm (IN-12).
-- **D-16** The side is chosen by a flip option; there is no symmetric option (IN-13).
+- **D-15** Default distance is 5 mm (IN-12).
+- **D-16** The side was chosen by a flip option. Replaced by D-33 (direction) and D-36 (negative
+  distances).
 - **D-18** The command is named "Spur Gear".
 - **D-19** Join finds its bodies itself, like Fusion's own features; there is no target
   selection (FEA-6).
@@ -443,18 +444,22 @@ Resolved on 2026-10-18, after SPIKE-8:
 - **D-31** There is no center-distance check. With profile shift, the circles to draw are the
   working pitch circles, which touch at the working center distance.
 - **D-32** Start options as in Extrude: Profile Plane, Offset and Object (IN-18 to IN-20). The
-  offset is along the sketch normal, independent of the flip side, and also applies to
+  offset is along the sketch normal, whichever way the gear extends, and also applies to
   Object. Only planes parallel to the sketch, and points, can be start objects: a gear on a
   tilted face makes no sense.
 - **D-33** Direction and extent as in Extrude: One Side, Two Sides and Symmetric; Distance and
   To Object (IN-21 to IN-26). To Object goes to the object whichever side it is on.
 - **D-34** Symmetric offers Extrude's Half Length and Whole Length, as icon buttons like
-  Extrude's; Whole Length is the default, so a gear's thickness stays its face width unless
+  Extrude's; Whole Length is the default, so a gear's distance stays its face width unless
   chosen otherwise (IN-27). To Object has an offset per side, positive past the object, away
   from the start (IN-28, IN-29).
 - **D-35** New gears start with the default extrusion settings, not the last used ones
   (UI-7): Extrude also starts from its defaults, and a leftover Two Sides or Object start is
   easily overlooked.
+- **D-36** No flip option: a negative distance goes the other way, as in Extrude, and the
+  distance input is called Distance, as there (IN-12, IN-24). A gear made with the flip option
+  keeps its shape: its flip is honored when it recomputes, and its edit dialog shows its
+  distances negated and clears the flip on OK.
 
 ## 13. Feasibility
 
@@ -500,9 +505,9 @@ change of the layout sketch reached every gear, created in any order.
 - **ARC-5** The add-in has no dependencies outside Fusion's bundled Python (D-13).
 - **ARC-6** An edit rolls the timeline back to before the feature only while the change is
   applied, inside the command's own transaction (UI-6).
-- **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side, operation,
-  start, direction and extents are stored with the feature as named values, the start and
-  extent objects as dependencies.
+- **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Operation, start,
+  direction, extents and measurement are stored with the feature as named values, the start
+  and extent objects as dependencies. Gears made before D-36 also have a flip named value.
 - **ARC-8** The train rules (TRN-2 to TRN-9, TRN-11) are `gearcore` functions on plain data:
   the layout circles, arcs and lines in the layout sketch's coordinates in, tooth axes and
   issues out. The Fusion layer finds the layout circle (TRN-1), reads the layout sketch and
