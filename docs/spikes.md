@@ -213,3 +213,46 @@ Conclusion: "Mesh with" is feasible. The new gear depends on the mate's custom f
 it by token, and computes its rotation recursively from the chain's parameters and circles.
 
 Not tested: the mate in another component, and a design opened without the add-in.
+
+## SPIKE-7 Meshing gears in separate components (added)
+
+Question: does the SPIKE-6 approach work when each gear is in its own component, as needed
+for joints? Code in `spikes/ComponentMeshSpike`, one run on Fusion 2705.1.30.
+
+Each document has a grounded Housing component and three gear components A, B and C. B's and
+C's occurrences are turned (30° and −50°), and each circle is off its component's origin, so
+a mix-up between component and assembly coordinates shows. Phases are worked out in assembly
+space from the occurrence transforms; each marker is placed in its component's own space.
+Three variants, each in its own document, differ in B's dependency on A.
+
+| Check | A's feature, native | A's feature through A's occurrence | A's circle through A's occurrence (control) |
+|---|---|---|---|
+| Dependency accepted | **No**, "Invalid argument entity" | Yes | Yes |
+| A's rotation parameter changes | B and C stay | **B and C follow** | B and C stay |
+| A's circle moves in its component | B and C stay | **B and C follow** | B follows, C stays |
+| B's circle moves | C stays | **C follows** | C follows |
+| A's rotation changes inside a command | B and C stay | **B and C follow** | B and C stay |
+| A's occurrence moved and turned, position captured | no recompute | no recompute | no recompute |
+| A's revolute joint driven to 20° | no recompute | no recompute | no recompute |
+| Second occurrence of A's component, then A's rotation changes | (no dependency) | **B and C follow the original occurrence** | B and C stay |
+
+The gear's own circle, in its own component, was only accepted through its occurrence (the
+native circle was tried first and rejected).
+
+Findings:
+
+- **Across components, depend on the mate's custom feature through the mate's occurrence**
+  (`feature.createForAssemblyContext(occurrence)`). The native feature is rejected. With the
+  proxy, everything SPIKE-6 showed in one component also holds across components, including
+  chains.
+- **Store which occurrence the mate is in.** With a second occurrence of A's component, B
+  kept meshing with the original, found through its stored entity token.
+- **A proxy curve's `worldGeometry` is in assembly coordinates**, including the occurrence's
+  rotation.
+- **Positions are those at the gear's place in the timeline.** Moving A's occurrence (with
+  the position captured) or driving A's joint triggered no recompute, and even Compute All
+  recomputed B with the old position: the compute reads the occurrence transforms as they are
+  at the gear's point in the timeline. Moves and joints that come later in the timeline do
+  not reach the gear. So driving joints does not re-align or slow down the gears, but
+  components must be in place, at the gear's point in the timeline, when the gears are
+  created. Whether a gear created after a joint uses the joint's position was not tested.

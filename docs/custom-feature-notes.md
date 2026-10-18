@@ -91,6 +91,11 @@ compute events while your own dialog is open and rebuild the body yourself.
   document recomputes after an edit.
 - To find another custom feature during compute, store its `entityToken` in a named value at
   creation and look it up with `design.findEntityByToken`. (Confirmed, SPIKE-6)
+- **Across components, a dependency on another component's custom feature or sketch curve
+  must be a proxy through an occurrence** (`entity.createForAssemblyContext(occurrence)`).
+  The native object is rejected with "Invalid argument entity". With the proxy, recomputes
+  propagate across components as within one. (Confirmed, SPIKE-7) If the component has
+  several occurrences, store which one (its entity token) yourself.
 
 ## Parameters and other stored values
 
@@ -235,6 +240,12 @@ To match that (Confirmed):
   creation still has to handle "nothing to join".
 
 ## Components and coordinates
+
+- **A compute sees the assembly as it is at the feature's place in the timeline.**
+  (Confirmed, SPIKE-7) Occurrence transforms read in the compute handler are those at that
+  point. Moving an occurrence later (with the position captured) or driving a joint does not
+  trigger a recompute, and Compute All still uses the old positions.
+- A proxy sketch curve's `worldGeometry` is in assembly coordinates. (Confirmed, SPIKE-7)
 
 - Create the features in the component that owns the selected entity
   (`native.parentSketch.parentComponent.features`). (Confirmed)
