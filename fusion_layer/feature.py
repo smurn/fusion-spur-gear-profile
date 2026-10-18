@@ -132,6 +132,7 @@ class Evaluation:
     outline: typing.Optional[gearcore.Outline] = None
     issues: list = dataclasses.field(default_factory=list)
     train: typing.Optional[layout.Train] = None
+    object_distance: typing.Optional[float] = None   # cm, from the curve's plane to the start object
 
 
 def feature_occurrence(feature: adsk.fusion.CustomFeature):
@@ -152,10 +153,13 @@ def feature_occurrence(feature: adsk.fusion.CustomFeature):
         return None
 
 
-def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_object=None) -> Evaluation:
+def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_object=None,
+             known_distance: typing.Optional[float] = None) -> Evaluation:
     """Run the gear math for a curve and parameter values. target is the gear's
     component and the occurrence of it (FEA-14); start and start_object are IN-18
-    and IN-20. Never raises for bad input."""
+    and IN-20. known_distance is the start object's distance from an earlier
+    evaluation, used if the object is not valid right now. Never raises for bad
+    input."""
     ev = Evaluation()
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
         ev.issues.append(gearcore.Issue('VAL-1', gearcore.ERROR, 'Select a sketch circle or arc.'))
@@ -168,17 +172,23 @@ def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_obje
     if start != PROFILE_PLANE:   # GEO-12: move to the start plane
         distance = values.get('start_offset', 0.0)
         if start == OBJECT:
-            if start_object is None or not start_object.isValid:
+            if start_object is not None and start_object.isValid:
+                try:
+                    ev.object_distance = geometry.start_distance(start_object, ev.frame, *target)
+                except geometry.AmbiguousOccurrence as e:
+                    ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
+                    return ev
+                except geometry.StartObjectError as e:
+                    ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
+                    return ev
+            elif start_object is not None and known_distance is not None:
+                # While a Join preview is shown, a face of the body it joins has been
+                # replaced, and the selected face is not valid until the preview goes.
+                ev.object_distance = known_distance
+            else:
                 ev.issues.append(gearcore.Issue('VAL-25', gearcore.ERROR, 'Select the start object.'))
                 return ev
-            try:
-                distance += geometry.start_distance(start_object, ev.frame, *target)
-            except geometry.AmbiguousOccurrence as e:
-                ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
-                return ev
-            except geometry.StartObjectError as e:
-                ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
-                return ev
+            distance += ev.object_distance
         ev.frame = geometry.shifted(ev.frame, distance)
     ev.params = to_gear_params(ev.frame, values)
     ev.issues = gearcore.validate(ev.params)
@@ -241,6 +251,9 @@ class SpurGearFeature:
         #: Settings of the last gear created, to start the next one with (UI-7).
         #: Kept in memory only.
         self._last_used: dict = {}
+        #: The start object's distance from the last evaluation where it was valid.
+        self._object_distance: typing.Optional[float] = None
+        self._logged: set = set()   # reasons for a disabled OK, logged once per dialog
 
         for cid, callback in ((CREATE_ID, self._on_create_created), (EDIT_ID, self._on_edit_created)):
             old = ui.commandDefinitions.itemById(cid)
@@ -297,6 +310,8 @@ class SpurGearFeature:
 
     def _build_dialog(self, command: adsk.core.Command):
         self._command = command
+        self._object_distance = None
+        self._logged = set()
         inputs = command.commandInputs
         feature = self._editing
 
@@ -411,8 +426,11 @@ class SpurGearFeature:
         return Settings(curve, operation, flip, expressions, values, start, start_object)
 
     def _evaluate(self, settings: Settings) -> Evaluation:
-        return evaluate(settings.curve, settings.values, self._target(), settings.start,
-                        settings.start_object)
+        ev = evaluate(settings.curve, settings.values, self._target(), settings.start,
+                      settings.start_object, self._object_distance)
+        if settings.start_object is not None and settings.start_object.isValid:
+            self._object_distance = ev.object_distance
+        return ev
 
     def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
         """VAL-12, checked without building the gear: if not even a cylinder of the
@@ -455,6 +473,8 @@ class SpurGearFeature:
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
+        if args.input.id == 'start_object':
+            self._object_distance = None
         if args.input.id != 'info':
             self._update_dialog(self._command.commandInputs)
 
@@ -469,7 +489,14 @@ class SpurGearFeature:
         valid = False
         if settings is not None:
             ev = self._evaluate(settings)
-            valid = ev.outline is not None and not self._join_problem(settings, ev)
+            problem = self._join_problem(settings, ev)
+            valid = ev.outline is not None and not problem
+            if not valid:   # the info box says the same; the log helps when it does not
+                reason = '; '.join([i.message for i in ev.issues if i.severity == gearcore.ERROR]
+                                   + ([problem] if problem else [])) or 'no outline'
+                if reason not in self._logged:
+                    self._logged.add(reason)
+                    log('OK disabled: ' + reason)
         args.areInputsValid = valid   # UI-5
 
     def _on_activate(self, args: adsk.core.CommandEventArgs):
