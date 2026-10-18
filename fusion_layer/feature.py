@@ -116,17 +116,42 @@ class Evaluation:
     train: typing.Optional[layout.Train] = None
 
 
-def evaluate(curve, values: dict) -> Evaluation:
-    """Run the gear math for a curve and parameter values. Never raises for bad input."""
+def feature_occurrence(feature: adsk.fusion.CustomFeature):
+    """The occurrence of the gear's component that was active when the gear was
+    created (FEA-14), or its only one, or None in the root component."""
+    values = feature.customNamedValues
+    token = values.value('occurrence') if values.isExistingValue('occurrence') else ''
+    if token:
+        for entity in design().findEntityByToken(token):
+            occurrence = adsk.fusion.Occurrence.cast(entity)
+            if occurrence:
+                return occurrence
+    try:
+        return geometry.component_occurrence(feature.parentComponent)
+    except geometry.AmbiguousOccurrence:
+        # A gear made before FEA-14 has no stored occurrence; it is in its curve's
+        # component, where no occurrence is needed (frame_in).
+        return None
+
+
+def evaluate(curve, values: dict, target) -> Evaluation:
+    """Run the gear math for a curve and parameter values. target is the gear's
+    component and the occurrence of it (FEA-14). Never raises for bad input."""
     ev = Evaluation()
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
         ev.issues.append(gearcore.Issue('VAL-1', gearcore.ERROR, 'Select a sketch circle or arc.'))
         return ev
-    ev.frame = geometry.frame_of(curve)
+    try:
+        ev.frame = geometry.frame_in(curve, *target)
+    except geometry.AmbiguousOccurrence as e:
+        ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
+        return ev
     ev.params = to_gear_params(ev.frame, values)
     ev.issues = gearcore.validate(ev.params)
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
-        ev.train = layout.train_of(curve, ev.frame, ev.params)   # section 7
+        # The rotation is relative to the curve's own frame, so it holds in the
+        # gear's component too (ARC-8).
+        ev.train = layout.train_of(curve, geometry.frame_of(curve), ev.params)   # section 7
         if ev.train.rotation is not None:
             ev.params = dataclasses.replace(ev.params, rotation=ev.train.rotation)
             # Which teeth of an arc are generated depends on the rotation (VAL-6).
@@ -307,6 +332,13 @@ class SpurGearFeature:
             return adsk.core.ValueInput.createByReal(value), differs
         return by_string(default), False
 
+    def _target(self):
+        """The gear's component and its occurrence: the edited gear's, or the active
+        one for a new gear, as with Fusion's own features (FEA-14)."""
+        if self._editing:
+            return self._editing.parentComponent, feature_occurrence(self._editing)
+        return design().activeComponent, design().activeOccurrence
+
     def _read(self, inputs: adsk.core.CommandInputs) -> typing.Optional[Settings]:
         """The dialog's current settings, or None while a value cannot be evaluated."""
         expressions, values = {}, {}
@@ -338,7 +370,7 @@ class SpurGearFeature:
                 own_body = bodies.item(0) if bodies.count else None
             except (StopIteration, RuntimeError):
                 own_body = None
-        component = geometry.native(settings.curve).parentSketch.parentComponent
+        component = self._target()[0]
         envelope = geometry.envelope_body(
             ev.frame, gearcore.derive(ev.params).tip_diameter / 2, ev.params.thickness, settings.flip)
         if geometry.touching_bodies(component, envelope, ignore=own_body):
@@ -349,7 +381,7 @@ class SpurGearFeature:
         settings = self._read(inputs)
         text = 'Enter valid values.'
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values)
+            ev = evaluate(settings.curve, settings.values, self._target())
             text = info_text(ev)
             note = note or self._join_problem(settings, ev)
             # UI-9: the layout sketch sets the rotation; the start rotation is not used.
@@ -370,7 +402,7 @@ class SpurGearFeature:
         settings = self._read(args.inputs)
         valid = False
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values)
+            ev = evaluate(settings.curve, settings.values, self._target())
             valid = ev.outline is not None and not self._join_problem(settings, ev)
         args.areInputsValid = valid   # UI-5
 
@@ -428,10 +460,10 @@ class SpurGearFeature:
 
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
-        ev = evaluate(settings.curve, settings.values)
+        component, occurrence = self._target()
+        ev = evaluate(settings.curve, settings.values, (component, occurrence))
         if ev.outline is None:
             return None
-        component = geometry.native(settings.curve).parentSketch.parentComponent
         features = component.features
 
         base = features.baseFeatures.add()
@@ -457,6 +489,7 @@ class SpurGearFeature:
         feature = features.customFeatures.add(inp)
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
+        feature.customNamedValues.addOrSetValue('occurrence', occurrence.entityToken if occurrence else '')
         self._set_dependencies(feature, settings.curve, ev.train)
         return feature
 
@@ -582,7 +615,7 @@ class SpurGearFeature:
                 feature.parameters.itemById(pid).expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
             self._set_dependencies(feature, settings.curve,
-                                   evaluate(settings.curve, settings.values).train)
+                                   evaluate(settings.curve, settings.values, self._target()).train)
             self._recompute(feature)
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)
@@ -597,7 +630,7 @@ class SpurGearFeature:
         if curve is None or not curve.isValid:
             raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
         values = {pid: feature.parameters.itemById(pid).value for pid, _, _, _ in PARAMS}
-        ev = evaluate(curve, values)
+        ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)))
         if ev.outline is None:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))

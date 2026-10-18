@@ -71,6 +71,83 @@ def frame_of(curve) -> Frame:
     return Frame(origin, x, y, normal, 2 * geo.radius / CM, span)
 
 
+class AmbiguousOccurrence(gearcore.GearError):
+    """A native entity in a component that has several occurrences: which copy is
+    meant cannot be told."""
+
+
+def occurrence_of(entity, component: adsk.fusion.Component):
+    """The occurrence an entity was picked in, or None for the root component. A
+    proxy carries it. A native entity in a component that is used once is in that
+    one occurrence; with several, raises AmbiguousOccurrence."""
+    context = getattr(entity, 'assemblyContext', None)
+    if context:
+        return context
+    return component_occurrence(component)
+
+
+def component_occurrence(component: adsk.fusion.Component):
+    """The component's only occurrence, or None for the root component. With
+    several, raises AmbiguousOccurrence."""
+    root = component.parentDesign.rootComponent
+    if component == root:
+        return None
+    occurrences = root.allOccurrencesByComponent(component)
+    if occurrences.count == 1:
+        return occurrences.item(0)
+    raise AmbiguousOccurrence('{} is used {} times; pick the curve in the assembly to tell which '
+                              'one is meant.'.format(component.name, occurrences.count))
+
+
+def to_assembly(frame: Frame, occurrence) -> Frame:
+    """The frame, given in its component's coordinates, in assembly coordinates:
+    moved by each occurrence's transform up the path to the root. Positions are
+    those at the current place in the timeline (FEA-13, SPIKE-7)."""
+    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
+    while occurrence is not None:
+        transform = native(occurrence).transform2   # relative to the parent component
+        origin.transformBy(transform)
+        for axis in axes:
+            axis.transformBy(transform)
+        occurrence = getattr(occurrence, 'assemblyContext', None)
+    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
+
+
+def angle_in(frame: Frame, other: Frame, angle: float) -> float:
+    """An angle measured in the other frame's plane, measured in this frame's
+    plane instead. The planes are parallel; their normals may point either way."""
+    direction = other.direction(angle)
+    return math.atan2(direction.dotProduct(frame.y), direction.dotProduct(frame.x))
+
+
+def from_assembly(frame: Frame, occurrence) -> Frame:
+    """The reverse of to_assembly: a frame in assembly coordinates, in the
+    coordinates of the occurrence's component."""
+    path = []
+    while occurrence is not None:
+        path.append(occurrence)
+        occurrence = getattr(occurrence, 'assemblyContext', None)
+    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
+    for step in reversed(path):   # from the top level down
+        inverse = native(step).transform2.copy()
+        inverse.invert()
+        origin.transformBy(inverse)
+        for axis in axes:
+            axis.transformBy(inverse)
+    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
+
+
+def frame_in(curve, component: adsk.fusion.Component, occurrence) -> Frame:
+    """The curve's frame in the coordinates of the gear's component (FEA-14),
+    which may differ from the curve's own component, for example when the gear is
+    made from a circle of a layout sketch. occurrence is the gear component's."""
+    frame = frame_of(curve)
+    own = native(curve).parentSketch.parentComponent
+    if own == component:
+        return frame
+    return from_assembly(to_assembly(frame, occurrence_of(curve, own)), occurrence)
+
+
 def source_bodies(base: adsk.fusion.BaseFeature) -> list:
     """Bodies owned by the base feature while it is being edited."""
     try:
