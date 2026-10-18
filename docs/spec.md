@@ -2,14 +2,14 @@
 
 Status: **Draft 0.9** (2026-10-13). Version 0.8 describes the add-in as implemented in
 version 0.9.0. Draft 0.9 adds meshing with another gear ("Mesh with"), which is not
-implemented yet: IN-17, DER-10, DER-11, the mesh part of GEO-9, FEA-12 to FEA-14, UI-9,
-VAL-15 to VAL-18, D-22 to D-25, CHK-7, ARC-8 and the mesh check in TST-2. Requirements have stable
+implemented yet: IN-17, DER-10, DER-11, the mesh part of GEO-9, FEA-12 to FEA-15, UI-9,
+VAL-15 to VAL-19, D-22 to D-26, CHK-7, CHK-8, ARC-8 and the mesh check in TST-2. Requirements have stable
 IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §11.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
 that produces a solid body; the reasons are in [spikes.md](spikes.md). Draft 0.4 dropped the
 target body selection for Join. Draft 0.6 limited the print offset to the toothed profile.
-Draft 0.9 added "Mesh with", after SPIKE-6.
+Draft 0.9 added "Mesh with", after SPIKE-6, across components after SPIKE-7.
 Retired IDs: SKT-1 to SKT-12, IN-16, VAL-9, D-1, D-4, D-6, D-17, SPIKE-1 to SPIKE-4. VAL-13
 was never used.
 
@@ -124,7 +124,7 @@ tooth thickness and the tip thickness. Undercut is reported through VAL-8.
 - **DER-9** Number of teeth that are generated (see GEO-9). For a circle this is z. The
   dialog shows it for arcs.
 - **DER-10** Center distance, with a mate (IN-17). The actual distance a is the distance
-  between the two curves' centers, measured in the mate's plane. The ideal distance a_w is
+  between the two curves' centers in assembly coordinates, measured in the mate's plane. The ideal distance a_w is
   the one at which the two gears mesh without backlash:
   inv α_w = inv α + 2·tan α·(x₁ + x₂) / (z₁ + z₂), a_w = m(z₁ + z₂)/2 · cos α / cos α_w.
   Backlash and print offset are not included: with a = a_w the gears have the backlash j_bn
@@ -135,7 +135,8 @@ tooth thickness and the tip thickness. Undercut is reported through VAL-8.
   rule). With u = frac((β − θ_M) / τ_M), this gear's tooth 0 axis is
   θ₀ = β + π − (½ − u)·τ. So a tooth of one gear on the line of centers faces a gap of the
   other. The result holds for any profile shift, backlash and print offset, because each
-  tooth is symmetric (GEO-8). If this gear's plane normal points the other way, θ₀ is
+  tooth is symmetric (GEO-8). DER-11 works in assembly coordinates, so the two gears may be
+  in different components (FEA-15). If this gear's plane normal points the other way, θ₀ is
   converted into its own plane.
 
 ## 6. Geometry
@@ -215,8 +216,9 @@ it a solid.
   designs, not in Part designs. This is a limitation of Fusion, also seen with other custom
   feature add-ins. In a Part design the gear is still created, recomputed and editable
   through the parameters dialog.
-- **FEA-12** With a mate (IN-17), the feature also depends on the mate's feature. It
-  recomputes whenever the mate does: when the mate's curve moves or changes, or any of the
+- **FEA-12** With a mate (IN-17), the feature also depends on the mate's feature, through
+  the occurrence of the mate's component that was picked if the mate is in another component
+  (SPIKE-7). It recomputes whenever the mate does: when the mate's curve moves or changes, or any of the
   mate's parameters change. This carries on along a chain of gears. While a mate is set, the
   start rotation (IN-10) is not used.
 - **FEA-13** Deleting a gear also deletes every gear that meshes with it, directly or through
@@ -224,6 +226,13 @@ it a solid.
   keep a gear, clear its "Mesh with" first.
 - **FEA-14** Clearing "Mesh with" in the edit dialog keeps the gear where it is: the start
   rotation is set to the rotation the mate gave it.
+- **FEA-15** The gear and its mate may be in different components. Their positions are taken
+  from the occurrences of their components: for the mate, the occurrence it was picked in;
+  for this gear, the one its curve was picked in. The positions used are those at this gear's
+  place in the timeline. Moving an occurrence later, capturing a position later, or driving a
+  joint does not change the gear and does not make it recompute. So the components must be in
+  place when the meshing gears are created, as in a top-down design. VAL-18 reports a center
+  distance that is off at that point.
 
 ## 8. Command and user interface
 
@@ -265,10 +274,11 @@ it a solid.
 | VAL-12 | Operation is Join and the gear touches no body | error |
 | VAL-14 | The outline cannot be built: the print offset removes the root circle or folds the root curve back on itself; no flank remains between root curve and tip circle; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
 
-| VAL-15 | "Mesh with" is not a Spur Gear, or the curve of one, earlier in the timeline in the same component; or it is this gear or its own curve. If several gears use the picked curve, the latest one before this gear is the mate | error |
+| VAL-15 | "Mesh with" is not a Spur Gear, or the curve of one, earlier in the timeline; or it is this gear or its own curve; or it was picked in the timeline and its component has more than one occurrence, so it is not clear which one is meant (pick its curve instead). If several gears use the picked curve, the latest one before this gear is the mate | error |
 | VAL-16 | Module or pressure angle differs from the mate's | error |
 | VAL-17 | The planes of the two curves are not parallel, or the centers coincide in the mate's plane | error |
 | VAL-18 | The center distance differs from the ideal one: \|a − a_w\| > 0.01·m | warning |
+| VAL-19 | With a mate: this gear's curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has more than one occurrence). Pick it in the assembly instead | error |
 
 A value outside the range given in §4 is an error and is reported with the ID of that input.
 
@@ -328,6 +338,13 @@ Resolved on 2026-10-13, after SPIKE-6:
 - **D-25** A wrong center distance is a warning, not an error (VAL-18). The add-in does not
   move curves.
 
+Resolved on 2026-10-17, after SPIKE-7:
+
+- **D-26** Meshing gears may be in different components, as an assembly with joints needs.
+  Positions come from the occurrences and are those at the gear's place in the timeline
+  (FEA-15). This suits a top-down design, where the components are in place before the gears
+  are made. Replaces the same-component rule of the first draft of VAL-15.
+
 ## 12. Feasibility
 
 The spikes are done; results are in [spikes.md](spikes.md). The custom feature design was
@@ -353,6 +370,8 @@ Open, for "Mesh with" (draft 0.9):
   clicked in the timeline, and which object it returns (the custom feature, or one of the
   features it contains). To be checked first when implementing IN-17. If it does not work,
   IN-17 accepts curves only.
+- **CHK-8** Bottom-up assembly: whether a gear created after the joints that place the
+  components meshes at the joined positions (FEA-15). Not tested in SPIKE-7.
 
 ## 13. Architecture and testing
 
@@ -374,7 +393,10 @@ Open, for "Mesh with" (draft 0.9):
 - **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side and operation
   are stored with the feature as named values.
 - **ARC-8** The mate is stored as a dependency on its custom feature and as its entity token
-  in a named value, which is how the compute finds it. The compute works out DER-11 along the
+  in a named value, which is how the compute finds it. Across components the dependency is a
+  proxy through the mate's occurrence; Fusion rejects the native feature there (SPIKE-7). The
+  compute takes the occurrences from the proxies the dependencies hand back, and transforms
+  each gear's frame up its occurrence path into assembly coordinates. The compute works out DER-11 along the
   whole chain each time and writes nothing to any feature: named values written during a
   compute broke the feature in SPIKE-6. DER-10 and DER-11 are `gearcore` functions.
 - **TST-1** `gearcore` has pytest tests runnable outside Fusion. Each test names the requirement

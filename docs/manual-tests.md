@@ -168,3 +168,26 @@ the first circle.
 61. Save, close and reopen. Change A's Start rotation: B and C follow.
 62. Delete A in the timeline: the gears meshing with it, directly or through the chain, are
     deleted too (FEA-13). Undo restores all of them.
+
+## Mesh with across components (FEA-15, VAL-15, VAL-19, CHK-8)
+
+Setup, top-down: a new design with two components created in place, Gear A and Gear B. In
+Gear A, a sketch with a circle of diameter 20 mm at (0, 0); in Gear B, one of diameter 30 mm
+at (25, 0). Create gear A on its circle.
+
+63. Create gear B on its circle, picking A's **circle** in the viewport as "Mesh with". The
+    info box shows center distance 25.000 mm. B meshes with A.
+64. Change A's Start rotation in Change Parameters: B follows. Move A's circle in its sketch:
+    B follows.
+65. Edit B and pick A **in the timeline** instead: same result (Gear A is used once).
+66. Add a revolute joint from each gear component to the ground or a housing, and drive A's
+    joint. B does not turn and does not recompute (FEA-15). With a motion link between the two
+    joints (ratio 20:30), driving either keeps them meshed.
+67. Copy and paste Gear A (a second occurrence, "Gear A:2") and move it away. Edit B: picking
+    gear A in the timeline is refused with a message to pick its curve. Pick the circle of
+    Gear A:2 instead: B now meshes with the copy.
+68. A gear in the root component as "Mesh with" for a gear in a component, and the other way
+    round. Note whether it works.
+69. Bottom-up (CHK-8): a component with a 30 mm circle at its own origin, placed by a joint
+    so that its center is 25 mm from A's. Create its gear after the joint, meshing with A.
+    Note whether it meshes at the joined position.

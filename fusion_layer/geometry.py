@@ -71,6 +71,42 @@ def frame_of(curve) -> Frame:
     return Frame(origin, x, y, normal, 2 * geo.radius / CM, span)
 
 
+class AmbiguousOccurrence(gearcore.GearError):
+    """A native entity in a component that has several occurrences: which copy is
+    meant cannot be told."""
+
+
+def occurrence_of(entity, component: adsk.fusion.Component):
+    """The occurrence an entity was picked in (FEA-15), or None for the root
+    component. A proxy carries it. A native entity in a component that is used
+    once is in that one occurrence; with several, raises AmbiguousOccurrence."""
+    context = getattr(entity, 'assemblyContext', None)
+    if context:
+        return context
+    root = component.parentDesign.rootComponent
+    if component == root:
+        return None
+    occurrences = root.allOccurrencesByComponent(component)
+    if occurrences.count == 1:
+        return occurrences.item(0)
+    raise AmbiguousOccurrence('{} is used {} times; pick its curve in the assembly to tell which '
+                              'one is meant.'.format(component.name, occurrences.count))
+
+
+def to_assembly(frame: Frame, occurrence) -> Frame:
+    """The frame, given in its component's coordinates, in assembly coordinates:
+    moved by each occurrence's transform up the path to the root. Positions are
+    those at the current place in the timeline (SPIKE-7)."""
+    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
+    while occurrence is not None:
+        transform = native(occurrence).transform2   # relative to the parent component
+        origin.transformBy(transform)
+        for axis in axes:
+            axis.transformBy(transform)
+        occurrence = getattr(occurrence, 'assemblyContext', None)
+    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
+
+
 def mesh_layout(frame: Frame, mate: Frame) -> typing.Optional[typing.Tuple[float, float]]:
     """Distance (mm) and direction from the mate's center to this gear's center,
     measured in the mate's plane (DER-10, DER-11). None if the planes are not

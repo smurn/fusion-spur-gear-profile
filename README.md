@@ -59,6 +59,26 @@ offers the dialog only in hybrid and assembly designs, not in part designs.
 Gears with few teeth are undercut, as a real rack-cut gear would be; the info box says so. A
 positive profile shift avoids it.
 
+### Meshing gears
+
+**Mesh with** turns a gear so that it meshes with another one, the mate. Pick the mate in the
+timeline, or click its circle or arc. A tooth of one gear then faces a gap of the other on the
+line between their centers, whatever their tooth counts, profile shifts or backlash. The
+start rotation is not used while a mate is set.
+
+- The gear follows its mate: change the mate's settings or move its curve and the gear turns
+  with it. This works along a chain, where C meshes with B and B with A.
+- The info box shows the distance between the centers and the distance at which the gears
+  mesh, and warns if they differ. Place the curves yourself; the add-in does not move them.
+- The two gears must have the same module and pressure angle and lie in parallel planes.
+- They can be in different components, so that each can get its own joint. The positions are
+  taken where the gear is in the timeline: draw the gears with the components already in
+  place (top-down). Moving a component or driving a joint later does not turn the gears; use a
+  motion link to make them turn together.
+- If the mate's component is used more than once, click its curve on the copy you mean.
+- Deleting a gear also deletes the gears that mesh with it (Undo brings them back). To keep
+  one, clear its Mesh with first; it stays where it is.
+
 ## Development
 
 - `gearcore/` is the gear math in pure Python. Run its tests with `python -m pytest` from the
