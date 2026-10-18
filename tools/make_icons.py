@@ -57,8 +57,8 @@ def coverage(loops, size: int):
     return [[c / SAMPLES ** 2 for c in line] for line in counts]
 
 
-def png(path: str, alpha):
-    write_png(path, [[FILL + (round(255 * a),) for a in line] for line in alpha])
+def png(path: str, alpha, color=FILL):
+    write_png(path, [[color + (round(255 * a),) for a in line] for line in alpha])
 
 
 def write_png(path: str, rgba):
@@ -131,9 +131,10 @@ SIDE_VIEWS = {
 }
 
 
-def side_view(size: int, shapes):
+def side_view(size: int, shapes, palette=None):
     """An icon drawn from shapes in a unit square, y down, with SAMPLES x SAMPLES
-    samples per pixel."""
+    samples per pixel. palette replaces colors, for the dark theme."""
+    palette = palette or {}
     rows = []
     for row in range(size):
         line = []
@@ -146,7 +147,7 @@ def side_view(size: int, shapes):
                     color = None
                     for shape_color, inside in shapes:
                         if inside(x, y):
-                            color = shape_color
+                            color = palette.get(shape_color, shape_color)
                     if color:
                         hits += 1
                         totals = [t + c for t, c in zip(totals, color)]
@@ -158,19 +159,37 @@ def side_view(size: int, shapes):
     return rows
 
 
+#: Colors for Fusion's dark theme (UI-12): lighter, to stand out on a dark background.
+DARK = {FILL: (110, 165, 225), BODY: (105, 130, 155), PLANE: (205, 205, 205), OBJECT: (165, 165, 165)}
+#: Fusion's documented dark theme suffix, and the one its own icons use.
+DARK_SUFFIXES = ('-dark_blue', '-dark')
+
+
+def themed(name: str, suffix: str) -> str:
+    """16x16@2x.png with -dark becomes 16x16@2x-dark.png."""
+    stem, ext = os.path.splitext(name)
+    return stem + suffix + ext
+
+
 def main():
     out = os.path.join(ROOT, 'resources')
     os.makedirs(out, exist_ok=True)
     for name, size in FILES:
         # Fewer, larger teeth at small sizes so that they stay recognizable.
         teeth = 8 if size <= 16 else 12
-        png(os.path.join(out, name), coverage(gear_loops(teeth), size))
+        alpha = coverage(gear_loops(teeth), size)
+        png(os.path.join(out, name), alpha)
+        for suffix in DARK_SUFFIXES:
+            png(os.path.join(out, themed(name, suffix)), alpha, DARK[FILL])
         print(name, size, 'px,', teeth, 'teeth')
     for folder, shapes in SIDE_VIEWS.items():
         path = os.path.join(out, *folder.split('/'))
         os.makedirs(path, exist_ok=True)
         for name, size in FILES:
             write_png(os.path.join(path, name), side_view(size, shapes))
+            dark = side_view(size, shapes, DARK)
+            for suffix in DARK_SUFFIXES:
+                write_png(os.path.join(path, themed(name, suffix)), dark)
         print(folder)
 
 
