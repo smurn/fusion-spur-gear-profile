@@ -6,6 +6,7 @@ feature groups that base feature and, for Join, one combine feature.
 
 import dataclasses
 import math
+import os
 import traceback
 import typing
 
@@ -28,6 +29,7 @@ PANEL_ID = 'SolidCreatePanel'
 NEW_BODY, JOIN = 'New Body', 'Join'
 PROFILE_PLANE, OFFSET, OBJECT = 'Profile Plane', 'Offset', 'Object'   # IN-18
 DISTANCE, TO_OBJECT = 'Distance', 'To Object'                         # IN-22, IN-25
+HALF_LENGTH, WHOLE_LENGTH = 'Half Length', 'Whole Length'             # IN-27
 #: Start and extent objects (IN-20, IN-23, IN-26): dialog input and dependency ids, labels.
 OBJECT_INPUTS = {'start_object': 'Start object', 'extent_object': 'Extent object',
                  'extent_object2': 'Extent object (side 2)'}
@@ -43,7 +45,9 @@ PARAMS = (
     ('module', 'Module', 'length', '1 mm'),
     ('start_offset', 'Start offset', 'length', '0 mm'),
     ('thickness', 'Thickness', 'length', '5 mm'),
+    ('extent_offset', 'Extent offset', 'length', '0 mm'),
     ('thickness2', 'Thickness (side 2)', 'length', '5 mm'),
+    ('extent_offset2', 'Extent offset (side 2)', 'length', '0 mm'),
     ('bore', 'Bore diameter', 'length', '0 mm'),
     ('rotation', 'Start rotation (% of pitch)', 'number', '0'),
     ('pressure_angle', 'Pressure angle', 'angle', '20 deg'),
@@ -140,6 +144,7 @@ class Extent:
     extent: str = DISTANCE                    # IN-22
     extent2: str = DISTANCE                   # IN-25
     objects: dict = dataclasses.field(default_factory=dict)   # by OBJECT_INPUTS id
+    half_length: bool = False                 # IN-27, with Symmetric
 
     def needed(self) -> list:
         """The ids of the objects this extent uses."""
@@ -163,7 +168,7 @@ def stored_extent(feature: adsk.fusion.CustomFeature) -> Extent:
                   named_value(feature, 'direction', gearcore.ONE_SIDE),
                   named_value(feature, 'flip', '0') == '1',
                   named_value(feature, 'extent', DISTANCE), named_value(feature, 'extent2', DISTANCE),
-                  objects)
+                  objects, named_value(feature, 'measurement', WHOLE_LENGTH) == HALF_LENGTH)
 
 
 @dataclasses.dataclass
@@ -248,19 +253,20 @@ def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None
     if extent.start != PROFILE_PLANE:
         start = (values.get('start_offset', 0.0) + ev.heights.get('start_object', 0.0)) / CM
 
-    def side(object_id: str, pid: str, kind: str) -> gearcore.Side:
-        if kind == TO_OBJECT:
-            return gearcore.Side(height=ev.heights[object_id] / CM)
+    def side(object_id: str, pid: str, offset_id: str, kind: str) -> gearcore.Side:
+        if kind == TO_OBJECT:   # IN-28, IN-29
+            return gearcore.Side(height=ev.heights[object_id] / CM,
+                                 offset=values.get(offset_id, 0.0) / CM)
         return gearcore.Side(distance=values.get(pid, 0.0) / CM)
 
-    first = side('extent_object', 'thickness',
+    first = side('extent_object', 'thickness', 'extent_offset',
                  DISTANCE if extent.direction == gearcore.SYMMETRIC else extent.extent)
-    second = (side('extent_object2', 'thickness2', extent.extent2)
+    second = (side('extent_object2', 'thickness2', 'extent_offset2', extent.extent2)
               if extent.direction == gearcore.TWO_SIDES else None)
     ev.issues = gearcore.extent_issues(extent.direction, first, second)
     if ev.issues:
         return ev
-    low, high = gearcore.span(start, extent.direction, extent.flip, first, second)
+    low, high = gearcore.span(start, extent.direction, extent.flip, first, second, extent.half_length)
     if high - low < 1e-6:
         ev.issues.append(gearcore.Issue('VAL-27', gearcore.ERROR, 'The gear has no thickness: its '
                                         'start and end are on the same plane.'))
@@ -323,6 +329,7 @@ def info_text(ev: Evaluation) -> str:
 
 class SpurGearFeature:
     def __init__(self, resources: str):
+        self._resources = resources
         self._handlers = []          # kept for the lifetime of the add-in
         self._command_handlers = []  # kept while a dialog is open
         self._command = None
@@ -426,6 +433,11 @@ class SpurGearFeature:
                 self._add_choice(inputs, 'direction', 'Direction',
                                  (gearcore.ONE_SIDE, gearcore.TWO_SIDES, gearcore.SYMMETRIC),
                                  extent.direction)
+                # IN-27, shown like Extrude's: a row of two icon buttons.
+                measurement = inputs.addButtonRowCommandInput('measurement', 'Measurement', False)
+                for name, folder in ((HALF_LENGTH, 'half_length'), (WHOLE_LENGTH, 'whole_length')):
+                    measurement.listItems.add(name, (name == HALF_LENGTH) == extent.half_length,
+                                              os.path.join(self._resources, 'measurement', folder))
                 inputs.addBoolValueInput('flip', 'Flip side', True, '', extent.flip)
                 self._add_choice(inputs, 'extent', 'Extent', (DISTANCE, TO_OBJECT), extent.extent)
             elif pid == 'thickness2':
@@ -520,8 +532,9 @@ class SpurGearFeature:
             selection = adsk.core.SelectionCommandInput.cast(inputs.itemById(object_id))
             objects[object_id] = selection.selection(0).entity if selection.selectionCount else None
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
+        measurement = adsk.core.ButtonRowCommandInput.cast(inputs.itemById('measurement')).selectedItem
         extent = Extent(choice('start'), choice('direction'), flip, choice('extent'), choice('extent2'),
-                        objects)
+                        objects, bool(measurement) and measurement.name == HALF_LENGTH)
         return Settings(curve, choice('operation'), expressions, values, extent)
 
     def _evaluate(self, settings: Settings) -> Evaluation:
@@ -585,12 +598,15 @@ class SpurGearFeature:
             e = settings.extent
             symmetric, two = e.direction == gearcore.SYMMETRIC, e.direction == gearcore.TWO_SIDES
             shown = {'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
+                     'measurement': symmetric,
                      'flip': not symmetric and (two or e.extent == DISTANCE),
                      'extent': not symmetric,
                      'thickness': symmetric or e.extent == DISTANCE,
                      'extent_object': not symmetric and e.extent == TO_OBJECT,
+                     'extent_offset': not symmetric and e.extent == TO_OBJECT,
                      'extent2': two, 'thickness2': two and e.extent2 == DISTANCE,
-                     'extent_object2': two and e.extent2 == TO_OBJECT}
+                     'extent_object2': two and e.extent2 == TO_OBJECT,
+                     'extent_offset2': two and e.extent2 == TO_OBJECT}
             for input_id, visible in shown.items():
                 find_input(inputs, input_id).isVisible = visible
             kept = [OBJECT_INPUTS[i] for i in OBJECT_INPUTS if self._keeps_object(settings, i)]
@@ -736,6 +752,7 @@ class SpurGearFeature:
         values.addOrSetValue('direction', extent.direction)
         values.addOrSetValue('extent', extent.extent)
         values.addOrSetValue('extent2', extent.extent2)
+        values.addOrSetValue('measurement', HALF_LENGTH if extent.half_length else WHOLE_LENGTH)
 
     @staticmethod
     def _store_heights(feature: adsk.fusion.CustomFeature, ev: Evaluation):
