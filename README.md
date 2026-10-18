@@ -59,6 +59,27 @@ offers the dialog only in hybrid and assembly designs, not in part designs.
 Gears with few teeth are undercut, as a real rack-cut gear would be; the info box says so. A
 positive profile shift avoids it.
 
+### Gear trains
+
+Gears mesh when their circles touch in one sketch, the layout sketch. Draw the whole train
+there: a circle for every gear, made tangent to the gears it meshes with. Then create each
+gear on its circle, either directly in the layout sketch or on a linked projection of the
+circle in the gear's own component. Each gear works out from the layout sketch how its train
+must be turned so that every tooth faces a tooth space of its neighbor.
+
+- The gears do not refer to each other. They can be created in any order and in any
+  component; only the layout sketch must come before them in the timeline.
+- Change the layout (move a circle, resize one) and every gear follows.
+- A start line fixes where a tooth points: a line from a circle's center to a point on that
+  circle. One per train at most. Without one, the train's first circle in the sketch has a
+  tooth on the sketch's X axis.
+- A sketch can hold several separate trains. Circles on a common center are not connected,
+  so gears on one shaft are turned independently.
+- All gears on a layout sketch must have the same module. With profile shift, draw the
+  working pitch circles, which touch at the working center distance.
+- The start rotation only applies to a gear whose circle touches nothing and has no start
+  line.
+
 ## Development
 
 - `gearcore/` is the gear math in pure Python. Run its tests with `python -m pytest` from the

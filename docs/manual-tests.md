@@ -130,3 +130,44 @@ custom features (FEA-11).
 46. Stop the add-in, then open the design. The gears are shown as last computed. Note what
     Fusion reports for the features and what happens when a circle is moved.
 47. Start the add-in again with the design open. Move a circle; the gear follows.
+
+## Gear trains (section 7, FEA-12, FEA-13, UI-9)
+
+Setup: a new hybrid design. In the root component, a sketch "Layout" with these circles, each
+center fixed by dimensions or tangent constraints:
+
+- Train 1: A, diameter 20 mm at (0, 0); B, 30 mm, tangent to A, its center 25 mm from A at
+  about 20°; C, 20 mm, tangent to B.
+- Train 2: D, 16 mm at (-40, 0); E, 24 mm, tangent to D.
+- F, 12 mm, on A's center.
+- A start line on A: a line from A's center to a point on A, at about 30°.
+
+48. Create a gear on circle C, directly in the layout sketch. The info box says "Gear train of
+    3 gears, touching 1; oriented by its start line". Start rotation is greyed out.
+49. Create gears on A and then B. All three mesh: zoom in where they touch. A has a tooth
+    centered on the start line.
+50. Change the start line's angle: A, B and C turn and stay meshed.
+51. Change B's position dimension so that B moves around A: B and C follow and stay meshed.
+52. Create gears on D and E. The info box says "no start line: oriented by its first circle in
+    the sketch". They mesh.
+53. Add a start line to D: D and E turn; train 1 does not change.
+54. Create a gear on F. It is not part of a train: Start rotation is available and works. Add
+    a start line ending on F: only F turns to it, A does not.
+55. Add a second start line to train 1, on C: A, B and C fail in the timeline, and their edit
+    dialog names the error. D and E are unaffected. Delete the line: all recover.
+56. Remove the tangent constraint between D and E and move E 0.1 mm away. Edit E: the info box
+    warns that two circles nearly touch. Undo.
+57. Delete the gear on B: A and C stay. Undo.
+58. Top-down with components: add two tangent circles P (20 mm) and Q (30 mm) to the layout.
+    Create components Gear P and Gear Q. In each, make a sketch and project the circle with
+    linked projection. Create the gears on the projected circles, Q first: they mesh.
+59. Change P's position in the layout: both gears follow.
+60. Put a layout sketch in its own component "Layout" instead, with linked projections into
+    gear components as in step 58. Same result.
+61. Draw an arc in the layout, tangent to A, with the touching point on the arc, and make a
+    sector gear on it: it meshes with A. Shorten the arc so the touching point is off the arc:
+    it is no longer part of the train.
+62. Four 24 mm circles on the corners of a 24 mm square, each tangent to two others: gears on
+    all four mesh. Three 24 mm circles all tangent to each other: their gears fail with an
+    error that the loop does not mesh.
+63. Save, close and reopen. Change the start line of train 1: the gears follow.
