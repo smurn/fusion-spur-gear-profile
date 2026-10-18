@@ -133,6 +133,28 @@ def mate_of(feature: adsk.fusion.CustomFeature) -> typing.Optional[adsk.fusion.C
     raise gearcore.GearError('The gear that {} meshes with no longer exists.'.format(feature.name))
 
 
+_logged = set()
+
+
+def timeline_index(feature: adsk.fusion.CustomFeature) -> typing.Optional[int]:
+    """The feature's position in the timeline, or None where Fusion does not give
+    it. Reading it raised "this is not a parametric design" while a gear was
+    edited and its mate picked in the timeline; the details go to the log once."""
+    error = None
+    for candidate in (geometry.native(feature), feature):
+        try:
+            return candidate.timelineObject.index
+        except RuntimeError as e:
+            error = e
+    message = 'no timeline position for {}: {} (design type {}, proxy: {}, component: {})'.format(
+        feature.name, str(error).strip(), design().designType,
+        getattr(feature, 'assemblyContext', None) is not None, feature.parentComponent.name)
+    if message not in _logged:
+        _logged.add(message)
+        log(message)
+    return None
+
+
 def resolve_mate(entity, editing: typing.Optional[adsk.fusion.CustomFeature] = None):
     """The Spur Gear picked as "Mesh with" (IN-17, VAL-15): the gear feature, a
     feature inside it (picking in the timeline may give either), or the gear's
@@ -145,6 +167,12 @@ def resolve_mate(entity, editing: typing.Optional[adsk.fusion.CustomFeature] = N
     if timeline_object:
         entity = timeline_object.entity
     picked = entity             # keeps the occurrence if it is a proxy
+    message = 'Mesh with: picked a {}{}'.format(  # CHK-7: what a timeline pick hands over
+        entity.objectType, ' through ' + entity.assemblyContext.name
+        if getattr(entity, 'assemblyContext', None) else '')
+    if message not in _logged:
+        _logged.add(message)
+        log(message)
     entity = geometry.native(entity)
     not_a_gear = 'Pick a Spur Gear in the timeline, or the circle or arc of one.'
     custom = adsk.fusion.CustomFeature.cast(entity)
@@ -165,15 +193,18 @@ def resolve_mate(entity, editing: typing.Optional[adsk.fusion.CustomFeature] = N
     if not candidates:
         return None, None, not_a_gear
     if editing is not None:
-        own = editing.timelineObject.index
-        earlier = [g for g in candidates if g.timelineObject.index < own]
-        if not earlier:
-            if all(g == editing for g in candidates):
-                return None, None, 'A gear cannot mesh with itself.'
-            return None, None, 'The gear to mesh with must come before this gear in the timeline.'
-        candidates = earlier
+        own = geometry.native(editing)
+        others = [g for g in candidates if g != own]
+        if not others:
+            return None, None, 'A gear cannot mesh with itself.'
+        own_index = timeline_index(own)
+        if own_index is not None:
+            others = [g for g in others if (timeline_index(g) or 0) < own_index]
+            if not others:
+                return None, None, 'The gear to mesh with must come before this gear in the timeline.'
+        candidates = others
     # Several gears may use the same curve: the latest one before this gear.
-    gear = max(candidates, key=lambda g: g.timelineObject.index)
+    gear = max(candidates, key=lambda g: timeline_index(g) or 0)
     try:
         occurrence = geometry.occurrence_of(picked, gear.parentComponent)
     except geometry.AmbiguousOccurrence as e:
