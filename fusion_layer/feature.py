@@ -191,9 +191,11 @@ def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_obje
                 except geometry.StartObjectError as e:
                     ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
                     return ev
-            elif start_object is not None and known_distance is not None:
+            elif known_distance is not None:
                 # While a Join preview is shown, a face of the body it joins has been
                 # replaced, and the selected face is not valid until the preview goes.
+                # When editing, the gear keeps its start object without it being
+                # selected (_keeps_start_object).
                 ev.object_distance = known_distance
             else:
                 ev.issues.append(gearcore.Issue('VAL-25', gearcore.ERROR, 'Select the start object.'))
@@ -321,6 +323,7 @@ class SpurGearFeature:
     def _build_dialog(self, command: adsk.core.Command):
         self._command = command
         self._object_distance = None
+        self._start_object_changed = False
         self._logged = set()
         inputs = command.commandInputs
         feature = self._editing
@@ -436,11 +439,26 @@ class SpurGearFeature:
         return Settings(curve, operation, flip, expressions, values, start, start_object)
 
     def _evaluate(self, settings: Settings) -> Evaluation:
+        known = self._object_distance
+        if known is None and self._keeps_start_object(settings):
+            # Where the gear started when it was last created or edited; good enough
+            # for the dialog's checks. The gear itself is built from the object.
+            stored = named_value(self._editing, 'start_distance', '')
+            known = float(stored) if stored else 0.0
         ev = evaluate(settings.curve, settings.values, self._target(), settings.start,
-                      settings.start_object, self._object_distance)
+                      settings.start_object, known)
         if settings.start_object is not None and settings.start_object.isValid:
             self._object_distance = ev.object_distance
         return ev
+
+    def _keeps_start_object(self, settings: Settings) -> bool:
+        """Whether an edited gear keeps the start object it has. The edit dialog does
+        not select it: a face of a body the gear joins exists only before the join,
+        at the gear's place in the timeline, and selecting a face that a preview
+        replaces disables OK (CHK-9). Picking an object replaces it."""
+        if not (self._editing and settings.start == OBJECT and settings.start_object is None):
+            return False
+        return not self._start_object_changed and bool(self._editing.dependencies.itemById('start_object'))
 
     def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
         """VAL-12, checked without building the gear: if not even a cylinder of the
@@ -478,6 +496,8 @@ class SpurGearFeature:
             # UI-10: show only what the chosen start needs.
             find_input(inputs, 'start_offset').isVisible = settings.start != PROFILE_PLANE
             inputs.itemById('start_object').isVisible = settings.start == OBJECT
+            if self._keeps_start_object(settings):
+                text += '<br/>Start object: as before. Pick another one to change it.'
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
@@ -485,6 +505,7 @@ class SpurGearFeature:
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
         if args.input.id == 'start_object':
             self._object_distance = None
+            self._start_object_changed = True
         if args.input.id != 'info':
             self._update_dialog(self._command.commandInputs)
 
@@ -516,13 +537,13 @@ class SpurGearFeature:
         the whole edit (rollTo plus beginStep, or Command.editingFeature, which is
         not always accepted) hid the gear and gave Undo an extra step that only
         moved the timeline marker. _apply_edit rolls it back just for the change."""
-        for dep_id in ('curve', 'start_object'):
-            dependency = self._editing.dependencies.itemById(dep_id)
-            if dependency and dependency.entity:
-                selection = adsk.core.SelectionCommandInput.cast(
-                    args.command.commandInputs.itemById(dep_id))
-                if not selection.addSelection(dependency.entity):
-                    log('could not select the {} of {}'.format(dep_id, self._editing.name))
+        dependency = self._editing.dependencies.itemById('curve')
+        if dependency and dependency.entity:
+            selection = adsk.core.SelectionCommandInput.cast(
+                args.command.commandInputs.itemById('curve'))
+            if not selection.addSelection(dependency.entity):
+                log('could not select the curve of ' + self._editing.name)
+        # The start object is not selected; see _keeps_start_object.
 
     def _on_destroy(self, args: adsk.core.CommandEventArgs):
         self._command = None
@@ -601,8 +622,16 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         feature.customNamedValues.addOrSetValue('occurrence', occurrence.entityToken if occurrence else '')
         feature.customNamedValues.addOrSetValue('start', settings.start)
+        self._store_start_distance(feature, ev)
         self._set_dependencies(feature, settings.curve, ev.train, self._start_object(settings))
         return feature
+
+    @staticmethod
+    def _store_start_distance(feature: adsk.fusion.CustomFeature, ev: Evaluation):
+        """For the edit dialog (_evaluate). Written in the command, never during a
+        compute, which must not write to the feature (SPIKE-6)."""
+        if ev.object_distance is not None:
+            feature.customNamedValues.addOrSetValue('start_distance', repr(ev.object_distance))
 
     @staticmethod
     def _join(component: adsk.fusion.Component, base: adsk.fusion.BaseFeature):
@@ -655,7 +684,8 @@ class SpurGearFeature:
 
     @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, curve,
-                          train: typing.Optional[layout.Train], start_object=None):
+                          train: typing.Optional[layout.Train], start_object=None,
+                          keep_start_object: bool = False):
         """Point the feature at its curve and start object (FEA-2) and its layout
         sketch (FEA-12). A dependency can only refer to the design as it was before
         the feature."""
@@ -698,7 +728,7 @@ class SpurGearFeature:
                     raise error
             # 'mate' is left over from the unreleased Mesh with version.
             stale = ['mate'] + (['layout'] if train is None or train.own_sketch else [])
-            stale += [] if start_object is not None else ['start_object']
+            stale += [] if start_object is not None or keep_start_object else ['start_object']
             for dep_id in stale:
                 existing = feature.dependencies.itemById(dep_id)
                 if existing:
@@ -736,16 +766,17 @@ class SpurGearFeature:
                     parameter.expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
             feature.customNamedValues.addOrSetValue('start', settings.start)
+            keep = self._keeps_start_object(settings)
             self._set_dependencies(feature, settings.curve, self._evaluate(settings).train,
-                                   self._start_object(settings))
-            self._recompute(feature)
+                                   None if keep else self._start_object(settings), keep)
+            self._store_start_distance(feature, self._recompute(feature))
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)
         finally:
             if resume_at is not None:
                 resume_at.rollTo(False)
 
-    def _recompute(self, feature: adsk.fusion.CustomFeature):
+    def _recompute(self, feature: adsk.fusion.CustomFeature) -> Evaluation:
         """Rebuild the gear body from the feature's curve and parameters (FEA-2, FEA-4)."""
         dependency = feature.dependencies.itemById('curve')
         curve = dependency.entity if dependency else None
@@ -771,6 +802,7 @@ class SpurGearFeature:
             new.deleteMe()
         finally:
             base.finishEdit()
+        return ev
 
     def _on_compute(self, args: adsk.fusion.CustomFeatureEventArgs):
         if self._command is not None:
