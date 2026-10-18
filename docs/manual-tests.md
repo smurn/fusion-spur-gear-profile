@@ -205,18 +205,18 @@ center fixed by dimensions or tangent constraints:
 
 ## Direction and extent (IN-21 to IN-26, GEO-12, UI-11)
 
-75. In a new gear's dialog: after Start come Direction (One Side), Flip side, Extent
+75. In a new gear's dialog: after Start come Direction (One Side), Flip side, Extent Type
     (Distance) and Thickness. Nothing for side 2 is shown.
-76. Direction Symmetric: Flip side and Extent disappear. With Thickness 6 mm the gear runs
+76. Direction Symmetric: Flip side and Extent Type disappear. With Thickness 6 mm the gear runs
     from 3 mm below to 3 mm above the start; the info box shows the face width.
 77. Direction Two Sides, Thickness 5 mm, side 2 Thickness 2 mm: the gear runs from 2 mm below
     to 5 mm above the start. Flip side swaps them.
-78. One Side with Extent To Object: pick a construction plane 8 mm above the sketch: the gear
+78. One Side with Extent Type To Object: pick a construction plane 8 mm above the sketch: the gear
     ends on it; the info box shows a face width of 8 mm. Pick one 4 mm below instead: the gear
     goes down to it. Move the plane: the gear follows.
 79. Two Sides with side 2 To Object, a point 3 mm below, and side 1 a distance of 5 mm: the
     gear runs from 3 mm below to 5 mm above.
-80. Start Object and Extent To Object on the same plane: error that the gear has no thickness;
+80. Start Object and Extent Type To Object on the same plane: error that the gear has no thickness;
     OK is disabled.
 81. A Join gear whose extent goes to a face of the body it joins: OK is available, the gear
     joins on OK, and it follows the face. Edit it: the extent object is kept ("as before").
@@ -230,10 +230,13 @@ center fixed by dimensions or tangent constraints:
     Whole Length selected. Thickness 6 mm gives a 6 mm gear centered on the start.
 85. Click Half Length: the gear is 12 mm, 6 mm each way. Hover over the buttons: the tooltips
     say Half Length and Whole Length. The icons are clear in light and dark themes.
-86. Extent To Object: an Extent offset input appears under the object. A plane 8 mm above with
+86. Extent Type To Object: an Extent offset input appears under the object. A plane 8 mm above with
     offset 1 mm: the gear ends 9 mm above. Offset -1 mm: 7 mm. A plane 4 mm below with
     offset 1 mm: the gear goes 5 mm down.
 87. Two Sides with side 2 To Object: side 2 has its own offset, which works the same way.
 88. Change an offset in Change Parameters: the gear follows (the offsets are parameters).
 89. Edit a Symmetric Half Length gear: Half Length is still selected. Create a new gear: it
     starts with Symmetric and Half Length again (UI-7).
+90. Start, Direction and Extent Type show an icon next to each choice, in the closed drop-down
+    and in its list. Two Sides and Symmetric are easy to tell apart. The icons are clear in
+    light and dark themes.
