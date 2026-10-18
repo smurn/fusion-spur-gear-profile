@@ -6,7 +6,7 @@
 	"description": {
 		"": "Creates solid involute spur gears from sketch circles and arcs."
 	},
-	"version": "0.10.0",
+	"version": "0.11.0",
 	"runOnStartup": true,
 	"supportedOS": "windows|mac",
 	"editEnabled": true

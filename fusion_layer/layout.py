@@ -74,10 +74,11 @@ class Train:
     orientation: gearcore.Orientation
     rotation: typing.Optional[float]   # the gear's start rotation p, if the layout sets it
     issues: list
+    mates: tuple = ()                  # gearcore.Mate in the gear's own frame (TRN-12)
 
 
 def train_of(curve, frame: Frame, params: gearcore.GearParams) -> Train:
-    """The gear's train (TRN-1 to TRN-11). frame is the gear's own frame, in its
+    """The gear's train (TRN-1 to TRN-12). frame is the gear's own frame, in its
     component's coordinates; params must be valid."""
     layout_curve = layout_curve_of(curve)
     sketch = native(layout_curve).parentSketch
@@ -90,7 +91,7 @@ def train_of(curve, frame: Frame, params: gearcore.GearParams) -> Train:
                      None, [])
     orientation = gearcore.orientation(curves, lines, params.module, index)
     train = Train(sketch, occurrence, own_sketch, orientation, None, list(orientation.issues))
-    if orientation.axis is None:
+    if orientation.axis is None and not orientation.mates:
         return train
 
     component = native(curve).parentSketch.parentComponent
@@ -106,6 +107,9 @@ def train_of(curve, frame: Frame, params: gearcore.GearParams) -> Train:
         train.issues.append(gearcore.Issue('VAL-22', gearcore.ERROR, 'The layout sketch is not '
                                            'parallel to the gear\'s sketch.'))
         return train
-    angle = angle_in(own, layout, orientation.axis)
-    train.rotation = gearcore.rotation_for_axis(angle, gearcore.tooth_count(params))
+    if orientation.axis is not None:
+        angle = angle_in(own, layout, orientation.axis)
+        train.rotation = gearcore.rotation_for_axis(angle, gearcore.tooth_count(params))
+    train.mates = tuple(gearcore.Mate(angle_in(own, layout, direction), radius)
+                        for direction, radius in orientation.mates)
     return train

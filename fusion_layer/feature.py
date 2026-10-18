@@ -70,6 +70,7 @@ PARAMS = (
     ('extent_offset2', 'Extent offset (side 2)', 'length', '0 mm'),
     ('bore', 'Bore diameter', 'length', '0 mm'),
     ('rotation', 'Start rotation (% of pitch)', 'number', '0'),
+    ('extra_teeth', 'Extra teeth', 'number', '0'),
     ('pressure_angle', 'Pressure angle', 'angle', '20 deg'),
     ('addendum', 'Addendum coefficient', 'number', '1'),
     ('dedendum', 'Dedendum coefficient', 'number', '1.25'),
@@ -123,7 +124,8 @@ def to_gear_params(frame: geometry.Frame, values: dict) -> gearcore.GearParams:
         addendum=values['addendum'], dedendum=values['dedendum'], fillet=values['fillet'],
         profile_shift=values['profile_shift'], backlash=mm('backlash'),
         print_offset=mm('print_offset'), rotation=values['rotation'] / 100.0,
-        tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'))
+        tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'),
+        extra_teeth=values.get('extra_teeth', 0.0))
 
 
 def parameter_of(feature: adsk.fusion.CustomFeature, pid: str):
@@ -204,6 +206,7 @@ class Settings:
     expressions: dict
     values: dict
     extent: Extent = dataclasses.field(default_factory=Extent)
+    auto_teeth: bool = True   # IN-30
 
 
 @dataclasses.dataclass
@@ -236,11 +239,11 @@ def feature_occurrence(feature: adsk.fusion.CustomFeature):
 
 
 def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None,
-             known: typing.Optional[dict] = None) -> Evaluation:
+             known: typing.Optional[dict] = None, auto_teeth: bool = False) -> Evaluation:
     """Run the gear math for a curve and parameter values. target is the gear's
     component and the occurrence of it (FEA-14). known holds the heights of objects
     from an earlier evaluation, used for objects that are not valid right now.
-    Never raises for bad input."""
+    auto_teeth is IN-30. Never raises for bad input."""
     ev = Evaluation(extent=extent or Extent())
     extent = ev.extent
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
@@ -298,15 +301,19 @@ def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None
                                         'start and end are on the same plane.'))
         return ev
     ev.frame = geometry.shifted(ev.frame, low * CM)
-    ev.params = dataclasses.replace(to_gear_params(ev.frame, values), thickness=high - low)
+    ev.params = dataclasses.replace(to_gear_params(ev.frame, values), thickness=high - low,
+                                    auto_teeth=auto_teeth)
     ev.issues = gearcore.validate(ev.params)
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
         # The rotation is relative to the curve's own frame, so it holds in the
         # gear's component too (ARC-8).
         ev.train = layout.train_of(curve, geometry.frame_of(curve), ev.params)   # section 7
+        changes = {'mates': ev.train.mates}   # TRN-12
         if ev.train.rotation is not None:
-            ev.params = dataclasses.replace(ev.params, rotation=ev.train.rotation)
-            # Which teeth of an arc are generated depends on the rotation (VAL-6).
+            changes['rotation'] = ev.train.rotation
+        if ev.train.mates or ev.train.rotation is not None:
+            ev.params = dataclasses.replace(ev.params, **changes)
+            # Which teeth of an arc are generated depends on both (VAL-6).
             ev.issues = gearcore.validate(ev.params)
         ev.issues += ev.train.issues
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
@@ -332,6 +339,8 @@ def info_text(ev: Evaluation) -> str:
         if ev.params.arc_span is not None:   # DER-9
             teeth = '{} of {} teeth'.format(d.generated_teeth, d.teeth)
         lines.append('<b>{}</b>, selected diameter {:.3f} mm'.format(teeth, ev.params.diameter))
+        if d.motion_range is not None:   # DER-12, UI-13
+            lines.append('Range of motion {:.1f} deg'.format(math.degrees(d.motion_range)))
         lines.append('Reference {:.3f} / base {:.3f} mm'.format(d.reference_diameter, d.base_diameter))
         lines.append('Tip {:.3f} / root {:.3f} mm'.format(d.tip_diameter, d.root_diameter))
         if d.tip_thickness is not None:
@@ -453,6 +462,13 @@ class SpurGearFeature:
                 advanced.append((pid, label, kind, default))
             elif pid in ('thickness', 'extent_offset', 'thickness2', 'extent_offset2'):
                 continue   # in the side inputs, below
+            elif pid == 'extra_teeth':   # UI-13
+                if feature:
+                    auto = named_value(feature, 'auto_teeth', '0') == '1'
+                else:
+                    auto = self._last_used.get('auto_teeth', True)
+                inputs.addBoolValueInput('auto_teeth', 'Automatic extra teeth', True, '', auto)
+                self._add_value(inputs, pid, pid)
             elif pid == 'start_offset':
                 self._add_choice(inputs, 'start', 'Start', 'start', (PROFILE_PLANE, OFFSET, OBJECT),
                                  extent.start)
@@ -481,7 +497,7 @@ class SpurGearFeature:
             group.children.addValueInput(pid, label, unit(kind), value)
             changed = changed or differs
         group.isExpanded = changed
-        inputs.addTextBoxCommandInput('info', '', '', 7, True)
+        inputs.addTextBoxCommandInput('info', '', '', 8, True)
         self._update_dialog(inputs)
 
         self._command_handlers = []
@@ -588,7 +604,8 @@ class SpurGearFeature:
         measurement = adsk.core.ButtonRowCommandInput.cast(inputs.itemById('measurement')).selectedItem
         extent = Extent(choice('start'), direction, False, choice(side1['extent']), choice('extent2'),
                         objects, bool(measurement) and measurement.name == HALF_LENGTH)
-        return Settings(selected('curve'), choice('operation'), expressions, values, extent)
+        auto = adsk.core.BoolValueCommandInput.cast(inputs.itemById('auto_teeth')).value
+        return Settings(selected('curve'), choice('operation'), expressions, values, extent, auto)
 
     def _carry_side1(self, inputs: adsk.core.CommandInputs):
         """When the direction switches to or from Two Sides, carry side 1's values to
@@ -625,7 +642,8 @@ class SpurGearFeature:
                 # the dialog's checks. The gear itself is built from the object.
                 stored = named_value(self._editing, 'height_' + object_id, '')
                 known[object_id] = float(stored) if stored else 0.0
-        ev = evaluate(settings.curve, settings.values, self._target(), settings.extent, known)
+        ev = evaluate(settings.curve, settings.values, self._target(), settings.extent, known,
+                      settings.auto_teeth)
         for object_id, entity in settings.extent.objects.items():
             if entity is not None and entity.isValid and object_id in ev.heights:
                 self._known[object_id] = ev.heights[object_id]
@@ -679,7 +697,10 @@ class SpurGearFeature:
             symmetric, two = e.direction == gearcore.SYMMETRIC, e.direction == gearcore.TWO_SIDES
             one = e.direction == gearcore.ONE_SIDE
             to1, to2 = e.extent == TO_OBJECT, e.extent2 == TO_OBJECT
-            shown = {'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
+            curve = geometry.native(settings.curve) if settings.curve else None
+            arc = bool(curve) and curve.objectType == adsk.fusion.SketchArc.classType()
+            shown = {'auto_teeth': arc, 'extra_teeth': arc,   # UI-13
+                     'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
                      'measurement': symmetric,
                      'extent': one, 'thickness': symmetric or (one and not to1),
                      'extent_object': one and to1, 'extent_offset': one and to1,
@@ -787,7 +808,7 @@ class SpurGearFeature:
                 self._apply_edit(self._editing, settings)
             elif self._create(settings):
                 self._last_used = {
-                    'operation': settings.operation,
+                    'operation': settings.operation, 'auto_teeth': settings.auto_teeth,
                     'params': {pid: (settings.expressions[pid], settings.values[pid])
                                for pid, _, _, _ in PARAMS if pid not in NOT_REMEMBERED}}
         except NothingToJoin as e:
@@ -796,7 +817,8 @@ class SpurGearFeature:
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
         component, occurrence = self._target()
-        ev = evaluate(settings.curve, settings.values, (component, occurrence), settings.extent)
+        ev = evaluate(settings.curve, settings.values, (component, occurrence), settings.extent,
+                      auto_teeth=settings.auto_teeth)
         if ev.outline is None:
             return None
         features = component.features
@@ -824,6 +846,7 @@ class SpurGearFeature:
         inp.setStartAndEndFeatures(base, last)
         feature = features.customFeatures.add(inp)
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
+        feature.customNamedValues.addOrSetValue('auto_teeth', '1' if settings.auto_teeth else '0')
         feature.customNamedValues.addOrSetValue('occurrence', occurrence.entityToken if occurrence else '')
         self._store_extent(feature, settings.extent)
         self._store_heights(feature, ev)
@@ -977,6 +1000,7 @@ class SpurGearFeature:
                 if parameter is not None:   # FEA-5: missing on gears made before it existed
                     parameter.expression = settings.expressions[pid]
             self._store_extent(feature, settings.extent)
+            feature.customNamedValues.addOrSetValue('auto_teeth', '1' if settings.auto_teeth else '0')
             needed = settings.extent.needed()
             keep = {i for i in needed if self._keeps_object(settings, i)}
             objects = {i: settings.extent.objects.get(i) for i in needed if i not in keep}
@@ -996,8 +1020,9 @@ class SpurGearFeature:
         if curve is None or not curve.isValid:
             raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
         values = {pid: parameter_value(feature, pid, kind, default) for pid, _, kind, default in PARAMS}
+        # Gears made before IN-30 existed have no automatic extra teeth (D-37).
         ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)),
-                      stored_extent(feature))
+                      stored_extent(feature), auto_teeth=named_value(feature, 'auto_teeth', '0') == '1')
         if ev.outline is None:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))
