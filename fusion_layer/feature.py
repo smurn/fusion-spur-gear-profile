@@ -13,7 +13,7 @@ import adsk.core
 import adsk.fusion
 
 from .. import gearcore
-from . import geometry
+from . import geometry, layout
 from .geometry import CM
 
 #: Never change: saved designs refer to their gear features by this id.
@@ -113,6 +113,7 @@ class Evaluation:
     params: typing.Optional[gearcore.GearParams] = None
     outline: typing.Optional[gearcore.Outline] = None
     issues: list = dataclasses.field(default_factory=list)
+    train: typing.Optional[layout.Train] = None
 
 
 def evaluate(curve, values: dict) -> Evaluation:
@@ -125,11 +126,25 @@ def evaluate(curve, values: dict) -> Evaluation:
     ev.params = to_gear_params(ev.frame, values)
     ev.issues = gearcore.validate(ev.params)
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
+        ev.train = layout.train_of(curve, ev.frame, ev.params)   # section 7
+        if ev.train.rotation is not None:
+            ev.params = dataclasses.replace(ev.params, rotation=ev.train.rotation)
+            # Which teeth of an arc are generated depends on the rotation (VAL-6).
+            ev.issues = gearcore.validate(ev.params)
+        ev.issues += ev.train.issues
+    if not any(i.severity == gearcore.ERROR for i in ev.issues):
         try:
             ev.outline = gearcore.gear_outline(ev.params)
         except gearcore.GearError as e:   # VAL-14: only found while building the outline
             ev.issues.append(gearcore.Issue('VAL-14', gearcore.ERROR, str(e)))
     return ev
+
+
+def oriented_by_layout(ev: Evaluation) -> bool:
+    """Whether the layout sketch sets the gear's orientation (TRN-10), even if it
+    cannot right now because of an error in the train."""
+    o = ev.train.orientation if ev.train else None
+    return bool(o and (o.train_size > 1 or o.start_line))
 
 
 def info_text(ev: Evaluation) -> str:
@@ -145,6 +160,14 @@ def info_text(ev: Evaluation) -> str:
         if d.tip_thickness is not None:
             lines.append('Tooth thickness {:.3f}, at the tip {:.3f} mm'.format(
                 d.tooth_thickness, d.tip_thickness))
+    if oriented_by_layout(ev):   # UI-9
+        o = ev.train.orientation
+        by = ('oriented by its start line' if o.start_line else
+              'no start line: oriented by its first circle in the sketch')
+        if o.train_size > 1:
+            lines.append('Gear train of {} gears, touching {}; {}'.format(o.train_size, o.touching, by))
+        else:
+            lines.append('Oriented by its start line')
     for issue in ev.issues:
         lines.append('<b>{}:</b> {}'.format(issue.severity.capitalize(), issue.message))
     return '<br/>'.join(lines)
@@ -329,6 +352,8 @@ class SpurGearFeature:
             ev = evaluate(settings.curve, settings.values)
             text = info_text(ev)
             note = note or self._join_problem(settings, ev)
+            # UI-9: the layout sketch sets the rotation; the start rotation is not used.
+            find_input(inputs, 'rotation').isEnabled = not oriented_by_layout(ev)
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
@@ -432,7 +457,7 @@ class SpurGearFeature:
         feature = features.customFeatures.add(inp)
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
-        self._set_dependencies(feature, settings)
+        self._set_dependencies(feature, settings.curve, ev.train)
         return feature
 
     @staticmethod
@@ -481,15 +506,16 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', operation)
 
     @staticmethod
-    def _set_dependencies(feature: adsk.fusion.CustomFeature, settings: Settings):
-        """Point the feature at its curve (FEA-2). A dependency can only refer to
-        the design as it was before the feature."""
+    def _set_dependencies(feature: adsk.fusion.CustomFeature, curve,
+                          train: typing.Optional[layout.Train]):
+        """Point the feature at its curve (FEA-2) and its layout sketch (FEA-12). A
+        dependency can only refer to the design as it was before the feature."""
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
-            wanted = {'curve': settings.curve}
+            wanted = {'curve': curve}
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid
                 # argument entity"). Try the entity as it was selected, then the
@@ -519,6 +545,26 @@ class SpurGearFeature:
                         error = e
                 if error is not None:
                     raise error
+            # 'mate' is left over from the unreleased Mesh with version.
+            stale = ['mate'] + (['layout'] if train is None or train.own_sketch else [])
+            for dep_id in stale:
+                existing = feature.dependencies.itemById(dep_id)
+                if existing:
+                    existing.deleteMe()
+            if train is not None and not train.own_sketch:
+                sketch = train.sketch
+                if train.occurrence is not None:
+                    sketch = sketch.createForAssemblyContext(train.occurrence)
+                try:
+                    existing = feature.dependencies.itemById('layout')
+                    if existing:
+                        existing.entity = sketch
+                    else:
+                        feature.dependencies.add('layout', sketch)
+                except RuntimeError as e:
+                    # Not essential: a change in the layout sketch recomputes the gear
+                    # through its projected curve anyway (SPIKE-8).
+                    log('layout sketch dependency of {} refused: {}'.format(feature.name, e))
         finally:
             if resume_at is not None:
                 resume_at.rollTo(False)
@@ -535,7 +581,8 @@ class SpurGearFeature:
             for pid, _, _, _ in PARAMS:
                 feature.parameters.itemById(pid).expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
-            self._set_dependencies(feature, settings)
+            self._set_dependencies(feature, settings.curve,
+                                   evaluate(settings.curve, settings.values).train)
             self._recompute(feature)
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)

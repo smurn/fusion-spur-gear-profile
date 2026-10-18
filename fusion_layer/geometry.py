@@ -40,7 +40,7 @@ class Frame:
 
 def native(entity):
     """The entity in its own component, for entities picked through an occurrence."""
-    return entity.nativeObject or entity
+    return getattr(entity, 'nativeObject', None) or entity
 
 
 def is_gear_curve(entity) -> bool:
