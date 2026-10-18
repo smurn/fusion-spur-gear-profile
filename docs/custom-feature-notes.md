@@ -106,6 +106,15 @@ compute events while your own dialog is open and rebuild the body yourself.
   `expression`, not its `value`, to keep references to user parameters.
 - In the compute handler read `feature.parameters.itemById(id).value`: internal units, cm and
   radians.
+- **Parameters cannot be added to an existing feature.** (Confirmed) `CustomFeatureParameters`
+  has no `add`; parameters exist only from `CustomFeatureInput.addCustomParameter` at
+  creation. A parameter introduced in a later add-in version is missing on older features,
+  and `parameters.itemById(id)` then **raises** "Invalid argument id" instead of returning
+  None. Wrap it, and fall back to a default.
+- **A selection that the preview invalidates disables OK.** (Observed) A Join preview replaced
+  the faces of the joined body; with one of those faces selected in the dialog, Fusion greyed
+  out OK even though `validateInputs` said the inputs were valid. Keep the preview from
+  modifying selected entities.
 - For non-numeric settings (a checkbox, an operation), use
   `feature.customNamedValues.addOrSetValue(id, text)`. They are stored with the feature but
   are not parameters and do not trigger a recompute.
