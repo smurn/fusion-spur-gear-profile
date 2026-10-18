@@ -209,8 +209,9 @@ center fixed by dimensions or tangent constraints:
     (Distance) and Thickness. Nothing for side 2 is shown.
 76. Direction Symmetric: Flip side and Extent Type disappear. With Thickness 6 mm the gear runs
     from 3 mm below to 3 mm above the start; the info box shows the face width.
-77. Direction Two Sides, Thickness 5 mm, side 2 Thickness 2 mm: the gear runs from 2 mm below
-    to 5 mm above the start. Flip side swaps them.
+77. Direction Two Sides: the side inputs move into two foldable groups, Side 1 and Side 2.
+    Side 1 Thickness 5 mm, Side 2 Thickness 2 mm: the gear runs from 2 mm below to 5 mm above
+    the start. Flip side swaps them.
 78. One Side with Extent Type To Object: pick a construction plane 8 mm above the sketch: the gear
     ends on it; the info box shows a face width of 8 mm. Pick one 4 mm below instead: the gear
     goes down to it. Move the plane: the gear follows.
@@ -240,3 +241,18 @@ center fixed by dimensions or tangent constraints:
 90. Start, Direction and Extent Type show an icon next to each choice, in the closed drop-down
     and in its list. Two Sides and Symmetric are easy to tell apart. The icons are clear in
     light and dark themes.
+
+## Dark theme, side groups, object selection (UI-11, UI-12)
+
+91. Switch Fusion to its dark theme. The Spur Gear button, the timeline icon and all icons in
+    the dialog (Start, Direction, Extent Type, Measurement) are drawn in lighter colors and
+    are clear. Switch back: the normal icons return.
+92. One Side, Extent Type To Object with an object and an offset of 1 mm. Switch Direction to
+    Two Sides: Side 1 shows the same extent type, object and offset. Change Side 1's
+    thickness, switch back to One Side: the changed thickness is kept.
+93. Choose Extent Type To Object (ungrouped, in Side 1 and in Side 2) and Start Object: each
+    time the matching selection is active right away, so clicking a face picks it without
+    clicking into the selection first.
+94. Fold and unfold Side 1 and Side 2: the inputs stay as they were.
+95. Edit a Two Sides gear whose side 1 goes To Object: the dialog opens with the groups, and
+    the info box says the extent object is kept.

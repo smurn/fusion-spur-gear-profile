@@ -42,7 +42,8 @@ opened without it shows each gear as last computed.
    - Start: from the sketch plane (Profile Plane), moved along the sketch normal by an offset
      (Offset), or from a parallel face, construction plane or point (Object), optionally with
      an offset too.
-   - Direction: One Side, Two Sides (each side with its own extent) or Symmetric, centered
+   - Direction: One Side, Two Sides (each side with its own extent, in groups Side 1 and
+     Side 2) or Symmetric, centered
      on the start. For Symmetric, Measurement chooses whether the thickness is the whole face
      width or goes each way.
    - Extent Type: a Distance (the thickness), or To Object, up to a parallel face, construction
