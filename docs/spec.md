@@ -305,7 +305,10 @@ other (D-27).
   one touches, and whether the train is oriented by a start line or, without one, by its
   first circle.
 - **UI-10** Start (IN-18) is a drop-down right before Thickness. The start offset is shown for
-  Offset and Object, the start object selection for Object only.
+  Offset and Object, the start object selection for Object only. When a gear is edited, its
+  start object stays as it is unless another one is picked; the dialog does not show it
+  selected, and the info box says it is kept. A face of a body the gear joins exists only
+  before the join, so it cannot be selected at the end of the timeline (CHK-9).
 
 ## 10. Validation
 
