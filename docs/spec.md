@@ -1,17 +1,21 @@
 # Spur Gear: Specification
 
-Status: **Draft 0.9** (2026-10-13). Version 0.8 describes the add-in as implemented in
-version 0.9.0. Draft 0.9 adds meshing with another gear ("Mesh with"), which is not
-implemented yet: IN-17, DER-10, DER-11, the mesh part of GEO-9, FEA-12 to FEA-15, UI-9,
-VAL-15 to VAL-19, D-22 to D-26, CHK-7, CHK-8, ARC-8 and the mesh check in TST-2. Requirements have stable
-IDs (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §11.
+Status: **Draft 0.9** (2026-10-18). Version 0.8 describes the add-in as implemented in
+version 0.9.0. Draft 0.9 adds gear trains oriented from a layout sketch (§7), which are not
+implemented yet: TRN-1 to TRN-11, the train part of GEO-9, FEA-12, FEA-13, UI-9, VAL-20 to
+VAL-24, D-27 to D-31, ARC-8 and the train checks in TST-2. Requirements have stable IDs
+(`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
 that produces a solid body; the reasons are in [spikes.md](spikes.md). Draft 0.4 dropped the
 target body selection for Join. Draft 0.6 limited the print offset to the toothed profile.
-Draft 0.9 added "Mesh with", after SPIKE-6, across components after SPIKE-7.
-Retired IDs: SKT-1 to SKT-12, IN-16, VAL-9, D-1, D-4, D-6, D-17, SPIKE-1 to SPIKE-4. VAL-13
-was never used.
+Draft 0.9 first linked each gear to the gear it meshes with ("Mesh with", SPIKE-6 and
+SPIKE-7). That tied the gears' order in the timeline to the chain, so it was replaced by a
+layout sketch (SPIKE-8). The "Mesh with" version is tagged `mesh-with-live-link` in git.
+Retired IDs: SKT-1 to SKT-12, IN-16, IN-17, VAL-9, VAL-15 to VAL-19, DER-10, DER-11,
+FEA-14, FEA-15, D-1, D-4, D-6, D-17, D-22 to D-26, CHK-7, CHK-8, SPIKE-1 to SPIKE-4. VAL-13
+was never used. FEA-12, FEA-13, UI-9 and ARC-8 had other meanings in the "Mesh with" draft,
+which was never released.
 
 ## 1. Purpose and scope
 
@@ -29,15 +33,16 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 - Live preview while the dialog is open.
 - Editing all inputs after creation, through the feature's edit dialog or the parameters
   dialog.
-- Turning a gear so that it meshes with another gear, and checking their center distance.
+- Gear trains: gears whose circles touch in a layout sketch are turned so that they mesh,
+  without any link between the gears themselves (§7).
 
 **Out of scope (v1)**
 - Helical, internal and bevel gears, racks, worms.
 - Tip relief and other flank modifications. The design must leave room to add them later.
-- Diametral pitch input. Placing gears at the right center distance: the user draws the
-  curves; the add-in only reports the ideal distance (DER-10).
-- Gears fixed to each other on one shaft (compound gears): their relative rotation is set
-  with the start rotation.
+- Diametral pitch input. Checking or calculating center distances: the user draws the circles
+  touching (D-31).
+- The relative rotation of gears fixed to each other on one shaft (compound gears). Each is in
+  its own train (TRN-3).
 - The gear outline as sketch geometry.
 - Cutting the gear shape out of a body.
 - Keyways, spokes, hubs and chamfers. The user adds them with ordinary features.
@@ -59,15 +64,15 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | b | thickness (face width) |
 | d_B | bore diameter |
 | τ | angular pitch, 2π / z |
-| a, a_w | actual and ideal center distance to the mate (DER-10) |
-| z₁, z₂, x₁, x₂ | tooth counts and profile shifts of this gear and its mate |
+| θ₀ | angle of the axis of tooth 0 (GEO-9) |
 | inv(φ) | involute function, tan φ − φ |
 
 ## 3. User workflow
 
 1. The user clicks **Spur Gear** in SOLID › CREATE.
-2. The user selects one circle or arc in an existing sketch. Optionally, the user also
-   selects the curve of an existing gear that this one should mesh with.
+2. The user selects one circle or arc in an existing sketch. For a gear train, that is a
+   circle of the layout sketch, or a linked projection of one in the gear's own component
+   (§7).
 3. The dialog shows the inputs (§4) with defaults and the derived values (§5). A live preview
    of the body updates on every change.
 4. On **OK** the gear feature is added to the timeline. **Cancel** leaves the design unchanged.
@@ -87,13 +92,12 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-7 | Profile shift coefficient x | 0 | any; limited by VAL-3 and VAL-14 |
 | IN-8 | Backlash j_bn | 0 mm | ≥ 0 |
 | IN-9 | Print offset δ | 0 mm | any; positive adds material; moves the toothed profile only (GEO-7); limited by VAL-14 |
-| IN-10 | Start rotation | 0 % | 0–100 % of one tooth pitch; 100 % wraps to 0 % |
+| IN-10 | Start rotation | 0 % | 0–100 % of one tooth pitch; 100 % wraps to 0 %. Used only by a gear whose orientation does not come from its layout sketch (TRN-10) |
 | IN-11 | Max profile deviation | 0.010 mm | 0.0001–0.1 mm |
 | IN-12 | Thickness b | 5 mm | > 0 |
 | IN-13 | Flip side | off | Off: the gear extends from the sketch plane along its normal. On: the opposite side |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
 | IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
-| IN-17 | Mesh with | none | Optional. Another Spur Gear, the mate, picked as its feature in the timeline or as its curve (IN-1). When set, the rotation comes from DER-11 and IN-10 is not used (FEA-12) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -123,21 +127,6 @@ tooth thickness and the tip thickness. Undercut is reported through VAL-8.
   s_a is undefined if the tip circle lies inside the base circle (VAL-3).
 - **DER-9** Number of teeth that are generated (see GEO-9). For a circle this is z. The
   dialog shows it for arcs.
-- **DER-10** Center distance, with a mate (IN-17). The actual distance a is the distance
-  between the two curves' centers in assembly coordinates, measured in the mate's plane. The ideal distance a_w is
-  the one at which the two gears mesh without backlash:
-  inv α_w = inv α + 2·tan α·(x₁ + x₂) / (z₁ + z₂), a_w = m(z₁ + z₂)/2 · cos α / cos α_w.
-  Backlash and print offset are not included: with a = a_w the gears have the backlash j_bn
-  of IN-8. The dialog shows a and a_w.
-- **DER-11** Rotation, with a mate. Angles are measured in the mate's plane, counterclockwise
-  about its normal. β is the direction from the mate's center to this gear's center. θ_M is
-  the axis angle of the mate's tooth 0 (GEO-9; if the mate itself has a mate, from this
-  rule). With u = frac((β − θ_M) / τ_M), this gear's tooth 0 axis is
-  θ₀ = β + π − (½ − u)·τ. So a tooth of one gear on the line of centers faces a gap of the
-  other. The result holds for any profile shift, backlash and print offset, because each
-  tooth is symmetric (GEO-8). DER-11 works in assembly coordinates, so the two gears may be
-  in different components (FEA-15). If this gear's plane normal points the other way, θ₀ is
-  converted into its own plane.
 
 ## 6. Geometry
 
@@ -170,11 +159,11 @@ it a solid.
   corner between flank and root curve.
 - **GEO-8** Each tooth is symmetric about its own tooth axis (a ray from the gear center).
 - **GEO-9** Tooth placement: tooth k's axis is at angle θ₀ + k·τ, with θ₀ = θ_ref + p·τ, or
-  with θ₀ from DER-11 if the gear has a mate.
+  with θ₀ from TRN-10 when the gear's orientation comes from its layout sketch.
   - Circle: θ_ref is the X axis of the selected curve's sketch; all z teeth are generated.
   - Arc: θ_ref is the direction from the center to the arc's midpoint. Only teeth whose full
-    pitch unit (axis ± τ/2) lies within the arc are generated. With p = 0 and no mate the
-    sector is symmetric about the arc midpoint.
+    pitch unit (axis ± τ/2) lies within the arc are generated. With p = 0 and no orientation
+    from the layout sketch the sector is symmetric about the arc midpoint.
 - **GEO-10** Arc mode: the root circle continues from the outermost generated teeth to the
   arc's end angles. From there the outline is closed by two straight radial edges. They run
   to the bore circle, which closes the outline with an arc, or to the center if there is no
@@ -185,7 +174,56 @@ it a solid.
 - **GEO-12** The solid is the outline extruded by the thickness b, perpendicular to the plane
   of the selected curve, starting at that plane. IN-13 selects the side.
 
-## 7. Feature behavior
+## 7. Gear trains
+
+Gears mesh because their circles touch in one sketch, the layout sketch. Each gear works out
+the orientation of its whole train from that sketch alone; the gears know nothing of each
+other (D-27).
+
+- **TRN-1** Layout sketch. A gear's layout circle is its curve, or, if the curve is a linked
+  projection of a sketch circle or arc, the curve it was projected from, followed back
+  through further projections. The layout sketch is the sketch holding the layout circle. It
+  may be in any component.
+- **TRN-2** Layout circles are all circles and arcs of the layout sketch, construction
+  geometry included. Each is taken as a gear's circle with this gear's module (TRN-9).
+- **TRN-3** Touching. Two layout circles touch when they touch from outside:
+  |a − (r₁ + r₂)| ≤ 0.001 mm, where a is the distance between their centers. For an arc, the
+  touching point must lie on the arc. Circles on a common center never touch, so gears on one
+  shaft are not connected, and neither are circles touching from inside. Touching circles
+  mesh.
+- **TRN-4** Train. A train is a set of layout circles connected through touching. A sketch
+  may hold several trains. A circle that touches nothing is a train of its own.
+- **TRN-5** Start line. A sketch line of the layout sketch with one end on a layout circle's
+  center and the other on that circle (both within 0.001 mm) is a start line of that circle.
+  It belongs to that circle only, so circles on a common center can each have one. A train
+  has at most one start line (VAL-20).
+- **TRN-6** Pair rule. For two touching circles, where circle 1 has a tooth axis at θ₁:
+  with β the direction from circle 1's center to circle 2's and u = frac((β − θ₁) / τ₁),
+  circle 2 has a tooth axis at θ₂ = β + π − (½ − u)·τ₂. A tooth of one then faces a tooth
+  space of the other on the line between their centers. This holds for any profile shift,
+  backlash and print offset, because each tooth is symmetric (GEO-8).
+- **TRN-7** Orientation of a train. Its first circle is the one with the start line, with a
+  tooth axis on the line. Without a start line it is the train's first circle in the sketch
+  (circles before arcs, each in the order Fusion lists them), with a tooth axis on the layout
+  sketch's X axis; deleting and redrawing circles can then turn the whole train, which still
+  meshes. From the first circle, TRN-6 gives a tooth axis of every circle of the train, along
+  the fewest touchings (breadth first, neighbors in sketch order).
+- **TRN-8** Loops. If touching circles form a loop, every touching pair not used by TRN-7 must
+  also mesh by TRN-6: the mismatch, measured along the reference circle, must not exceed
+  0.001 mm (VAL-21). Whether a loop that meshes can turn is not checked.
+- **TRN-9** Tooth counts. Every layout circle's tooth count comes from DER-1 with this gear's
+  module. All gears on a layout sketch are assumed to have the same module; this is not
+  checked (D-28).
+- **TRN-10** The gear's orientation comes from the layout sketch when its layout circle
+  belongs to a train of two or more circles, or has a start line. Its tooth axis from TRN-7 is
+  then converted from the layout sketch's plane into the gear's own plane, through assembly
+  coordinates when they are in different components; the planes must be parallel (VAL-22).
+  The start rotation (IN-10) is not used. Otherwise IN-10 applies (GEO-9).
+- **TRN-11** Near miss. Two layout circles that do not touch but whose distance differs from
+  touching by no more than 0.25·m are reported (VAL-23): usually a missing tangent
+  constraint.
+
+## 8. Feature behavior
 
 - **FEA-1** The gear is one custom feature. The timeline shows a single node for it, with the
   add-in's icon and a name of the form "Spur Gear1".
@@ -216,31 +254,22 @@ it a solid.
   designs, not in Part designs. This is a limitation of Fusion, also seen with other custom
   feature add-ins. In a Part design the gear is still created, recomputed and editable
   through the parameters dialog.
-- **FEA-12** With a mate (IN-17), the feature also depends on the mate's feature, through
-  the occurrence of the mate's component that was picked if the mate is in another component
-  (SPIKE-7). It recomputes whenever the mate does: when the mate's curve moves or changes, or any of the
-  mate's parameters change. This carries on along a chain of gears. While a mate is set, the
-  start rotation (IN-10) is not used.
-- **FEA-13** Deleting a gear also deletes every gear that meshes with it, directly or through
-  a chain. This is Fusion's behavior for a feature others depend on; Undo restores them. To
-  keep a gear, clear its "Mesh with" first.
-- **FEA-14** Clearing "Mesh with" in the edit dialog keeps the gear where it is: the start
-  rotation is set to the rotation the mate gave it.
-- **FEA-15** The gear and its mate may be in different components. Their positions are taken
-  from the occurrences of their components: for the mate, the occurrence it was picked in;
-  for this gear, the one its curve was picked in. The positions used are those at this gear's
-  place in the timeline. Moving an occurrence later, capturing a position later, or driving a
-  joint does not change the gear and does not make it recompute. So the components must be in
-  place when the meshing gears are created, as in a top-down design. VAL-18 reports a center
-  distance that is off at that point.
+- **FEA-12** The feature also depends on its layout sketch, if that is not its curve's own
+  sketch. Any change in the layout sketch recomputes the gear: moving or resizing any of its
+  circles, and adding, turning or removing a start line (SPIKE-8). The gears do not depend on
+  each other: their order in the timeline does not matter, and deleting one leaves the others
+  alone. Only the layout sketch must come before them.
+- **FEA-13** Positions in assembly coordinates, needed when the gear and its layout sketch are
+  in different components, are those at the gear's place in the timeline. Moving a component
+  later, or driving a joint, does not turn the gear (SPIKE-7).
 
-## 8. Command and user interface
+## 9. Command and user interface
 
 - **UI-1** The command button is in the SOLID › CREATE panel.
 - **UI-2** The curve selection accepts only sketch circles and sketch arcs.
 - **UI-3** Live preview: on every input change the preview shows the resulting body. It must
   be geometrically identical to the committed result.
-- **UI-4** Derived values (§5) and validation messages (§9) update together with the preview.
+- **UI-4** Derived values (§5) and validation messages (§10) update together with the preview.
 - **UI-5** OK is disabled while any VAL error is present. One case is only caught on OK, with
   a message: see VAL-12.
 - **UI-6** Creating a gear is a single undo step. So is each edit.
@@ -251,13 +280,12 @@ it a solid.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
   deviation are in a group named Advanced. It is collapsed unless one of them differs from
   its default.
-- **UI-9** "Mesh with" is an optional selection right after the curve. It accepts a feature,
-  picked in the timeline, and sketch circles and arcs; VAL-15 checks that it is a Spur Gear
-  or a Spur Gear's curve. While it is set, the
-  start rotation input is disabled, and the info box names the mate and shows the actual and
-  ideal center distance (DER-10). It is not remembered for the next gear (UI-7).
+- **UI-9** When the orientation comes from the layout sketch (TRN-10), the start rotation input
+  is disabled and the info box says so: how many gears the train has, how many circles this
+  one touches, and whether the train is oriented by a start line or, without one, by its
+  first circle.
 
-## 9. Validation
+## 10. Validation
 
 | ID | Condition | Severity |
 |---|---|---|
@@ -273,12 +301,11 @@ it a solid.
 | VAL-11 | Bore does not fit inside the root circle: d_B ≥ d_f | error |
 | VAL-12 | Operation is Join and the gear touches no body | error |
 | VAL-14 | The outline cannot be built: the print offset removes the root circle or folds the root curve back on itself; no flank remains between root curve and tip circle; or x = h_f\* − ρ_f\* exactly, where the root curve has a cusp | error |
-
-| VAL-15 | "Mesh with" is not a Spur Gear, or the curve of one, earlier in the timeline; or it is this gear or its own curve; or it was picked in the timeline and its component has more than one occurrence, so it is not clear which one is meant (pick its curve instead). If several gears use the picked curve, the latest one before this gear is the mate | error |
-| VAL-16 | Module or pressure angle differs from the mate's | error |
-| VAL-17 | The planes of the two curves are not parallel, or the centers coincide in the mate's plane | error |
-| VAL-18 | The center distance differs from the ideal one: \|a − a_w\| > 0.01·m | warning |
-| VAL-19 | With a mate: this gear's curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has more than one occurrence). Pick it in the assembly instead | error |
+| VAL-20 | The gear's train has more than one start line (TRN-5) | error |
+| VAL-21 | A loop in the gear's train does not mesh (TRN-8) | error |
+| VAL-22 | The layout sketch's plane is not parallel to the gear's plane (TRN-10) | error |
+| VAL-23 | Two circles of the gear's train nearly touch (TRN-11) | warning |
+| VAL-24 | The layout sketch is in another component, and the gear's curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has several occurrences). Pick it in the assembly instead | error |
 
 A value outside the range given in §4 is an error and is reported with the ID of that input.
 
@@ -286,7 +313,9 @@ VAL-12 is checked in two steps. The dialog tests whether a cylinder of the tip d
 touch a body, which needs no change to the design, and disables OK if not. A gear that misses
 every body only between its teeth passes that test and is rejected on OK.
 
-## 10. Accuracy
+VAL-20, VAL-21 and VAL-23 concern only the gear's own train, not other trains on the sketch.
+
+## 11. Accuracy
 
 - **ACC-1** Every curve that approximates an exact curve (involute, trochoid, including any
   offset) deviates from it by no more than the IN-11 tolerance, measured as normal distance.
@@ -298,7 +327,7 @@ every body only between its teeth passes that test and is rejected on OK.
 - **ACC-4** Tip, root and bore arcs, the corner arcs of GEO-7 and the radial edges are exact
   arcs and lines, not approximations.
 
-## 11. Decisions
+## 12. Decisions
 
 Resolved on 2026-10-10:
 
@@ -327,25 +356,22 @@ Resolved on 2026-10-11, after the spikes:
 - **D-21** The dialog remembers the last used settings in memory only, and keeps the rarely
   changed inputs in a collapsed group (UI-7, UI-8).
 
-Resolved on 2026-10-13, after SPIKE-6:
+Resolved on 2026-10-18, after SPIKE-8:
 
-- **D-22** Gears are aligned by picking the gear to mesh with (IN-17), not a reference line.
-  A line only aligns pairs; a mate also works along a chain of gears. The mate can be picked
-  in the timeline or by its curve; the curve needs its sketch to be visible.
-- **D-23** A gear with a mate depends on the mate's custom feature. Depending on the mate's
-  parameters is rejected by Fusion, and depending on its body breaks recomputing (SPIKE-6).
-- **D-24** Deleting a gear deletes the gears meshing with it (FEA-13). Accepted.
-- **D-25** A wrong center distance is a warning, not an error (VAL-18). The add-in does not
-  move curves.
+- **D-27** Gears mesh through a layout sketch (§7), not through links between the gears.
+  Gears linked to each other ("Mesh with") had to come in chain order in the timeline; gears
+  that only read an early sketch can be modeled in any order and in any component, and later
+  perhaps in other designs. Replaces D-22 to D-26.
+- **D-28** Touching circles mesh, and all gears on one layout sketch use the same module,
+  which is not checked (TRN-3, TRN-9).
+- **D-29** A start line runs from a circle's center to the circle; at most one per train.
+  Without one, the train's first circle in the sketch sets the orientation (TRN-5, TRN-7).
+- **D-30** Circles on a common center are not connected: gears on one shaft are oriented
+  independently. Loops are allowed if they mesh (TRN-3, TRN-8).
+- **D-31** There is no center-distance check. With profile shift, the circles to draw are the
+  working pitch circles, which touch at the working center distance.
 
-Resolved on 2026-10-17, after SPIKE-7:
-
-- **D-26** Meshing gears may be in different components, as an assembly with joints needs.
-  Positions come from the occurrences and are those at the gear's place in the timeline
-  (FEA-15). This suits a top-down design, where the components are in place before the gears
-  are made. Replaces the same-component rule of the first draft of VAL-15.
-
-## 12. Feasibility
+## 13. Feasibility
 
 The spikes are done; results are in [spikes.md](spikes.md). The custom feature design was
 tested in SPIKE-5. The points it left open were checked by hand on the first working version
@@ -364,16 +390,11 @@ of the add-in (2026-10-11):
 - **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): works.
 - **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
 
-Open, for "Mesh with" (draft 0.9):
+The gear-train design was tested in SPIKE-8: projections lead back to the layout sketch, the
+dependency on it is accepted in the root component and through an occurrence, and every
+change of the layout sketch reached every gear, created in any order.
 
-- **CHK-7** Whether a selection input with Fusion's "Features" filter accepts a custom feature
-  clicked in the timeline, and which object it returns (the custom feature, or one of the
-  features it contains). To be checked first when implementing IN-17. If it does not work,
-  IN-17 accepts curves only.
-- **CHK-8** Bottom-up assembly: whether a gear created after the joints that place the
-  components meshes at the joined positions (FEA-15). Not tested in SPIKE-7.
-
-## 13. Architecture and testing
+## 14. Architecture and testing
 
 - **ARC-1** `gearcore`: pure Python with no Fusion imports. It computes the closed outline as
   a sequence of exact arcs, straight lines and interpolated curves (GEO-\*, ACC-\*), the
@@ -392,13 +413,10 @@ Open, for "Mesh with" (draft 0.9):
   applied, inside the command's own transaction (UI-6).
 - **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side and operation
   are stored with the feature as named values.
-- **ARC-8** The mate is stored as a dependency on its custom feature and as its entity token
-  in a named value, which is how the compute finds it. Across components the dependency is a
-  proxy through the mate's occurrence; Fusion rejects the native feature there (SPIKE-7). The
-  compute takes the occurrences from the proxies the dependencies hand back, and transforms
-  each gear's frame up its occurrence path into assembly coordinates. The compute works out DER-11 along the
-  whole chain each time and writes nothing to any feature: named values written during a
-  compute broke the feature in SPIKE-6. DER-10 and DER-11 are `gearcore` functions.
+- **ARC-8** The train rules (TRN-2 to TRN-9, TRN-11) are `gearcore` functions on plain data:
+  the layout circles, arcs and lines in the layout sketch's coordinates in, tooth axes and
+  issues out. The Fusion layer finds the layout circle (TRN-1), reads the layout sketch,
+  converts the tooth axis into the gear's plane (TRN-10) and stores nothing extra.
 - **TST-1** `gearcore` has pytest tests runnable outside Fusion. Each test names the requirement
   IDs it covers.
 - **TST-2** Reference checks include: DER formulas against hand-calculated values;
@@ -406,13 +424,15 @@ Open, for "Mesh with" (draft 0.9):
   circle involute; ACC-1 by sampling; s at the reference circle matching DER-6; the outline
   being closed (ACC-3); the enclosed area in arc mode and with a bore; the tooth outline
   against an independent model of the generating rack, including undercut; the offset outline
-  lying at distance |δ| from the outline without offset; two gears placed by DER-11 at the
-  ideal center distance touching when there is no backlash (overlap no deeper than the IN-11
-  tolerance), and with a clearance of j_bn/2 on each flank when there is.
+  lying at distance |δ| from the outline without offset; two gears oriented by TRN-6 at the
+  center distance where they mesh touching when there is no backlash (overlap no deeper than
+  the IN-11 tolerance), and with a clearance of j_bn/2 on each flank when there is; the train
+  rules: touching, arcs, start lines, several trains, circles on a common center, loops that
+  do and do not mesh, near misses.
 - **TST-3** The Fusion layer is verified with a manual checklist in `docs/manual-tests.md`
   that covers the FEA and UI requirements and the CHK items.
 
-## 14. References
+## 15. References
 
 - ISO 53:1998, cylindrical gears: standard basic rack tooth profile (types A–D).
 - ISO 21771-1:2024, cylindrical involute gears: geometry.
