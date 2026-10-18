@@ -27,8 +27,9 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
     rotation, Profile shift, Backlash and Print offset are visible. Pressure angle, the
     three coefficients and Max profile deviation are in a collapsed group named Advanced.
 9. Create a gear with Module 2 mm, Thickness 8 mm, Flip side ticked and Pressure angle 25 deg.
-    Start Spur Gear again: those values are filled in, and Advanced is open because Pressure
-    angle is not at its default. The circle is not selected.
+    Start Spur Gear again: Module, Thickness and Pressure angle are filled in, and Advanced is
+    open because Pressure angle is not at its default. Flip side is off again (D-35). The
+    circle is not selected.
 10. Set Pressure angle back to 20 deg and create another gear. Start Spur Gear again: Advanced
     is collapsed.
 11. Edit an existing gear and change its thickness. Start Spur Gear again: the dialog still
@@ -200,8 +201,8 @@ center fixed by dimensions or tangent constraints:
     follow the face?
 73. Edit a gear made before this version: Start shows Profile Plane; the offset input is
     disabled with a tooltip; Object works.
-74. Create a gear with Start set to Offset 2 mm; start a second one: it starts with Offset
-    2 mm again (UI-7), and no object is preselected.
+74. Create a gear with Start set to Offset 2 mm; start a second one: it starts with Profile
+    Plane again, and when Offset is chosen the offset is 0 mm (UI-7, D-35).
 
 ## Direction and extent (IN-21 to IN-26, GEO-12, UI-11)
 
@@ -223,7 +224,7 @@ center fixed by dimensions or tangent constraints:
     joins on OK, and it follows the face. Edit it: the extent object is kept ("as before").
 82. Edit a gear made before this version: it opens with One Side and Distance; Thickness
     (side 2) is disabled.
-83. Create a Symmetric gear; start a new one: it starts with Symmetric again (UI-7).
+83. Create a Symmetric gear; start a new one: it starts with One Side (UI-7, D-35).
 
 ## Measurement and To Object offset (IN-27 to IN-29, UI-11)
 
@@ -237,7 +238,7 @@ center fixed by dimensions or tangent constraints:
 87. Two Sides with side 2 To Object: side 2 has its own offset, which works the same way.
 88. Change an offset in Change Parameters: the gear follows (the offsets are parameters).
 89. Edit a Symmetric Half Length gear: Half Length is still selected. Create a new gear: it
-    starts with Symmetric and Half Length again (UI-7).
+    starts with One Side, and Symmetric starts with Whole Length (UI-7, D-35).
 90. Start, Direction and Extent Type show an icon next to each choice, in the closed drop-down
     and in its list. Two Sides and Symmetric are easy to tell apart. The icons are clear in
     light and dark themes.
@@ -256,3 +257,6 @@ center fixed by dimensions or tangent constraints:
 94. Fold and unfold Side 1 and Side 2: the inputs stay as they were.
 95. Edit a Two Sides gear whose side 1 goes To Object: the dialog opens with the groups, and
     the info box says the extent object is kept.
+96. Create a Two Sides gear with Side 1 To Object, Side 2 Thickness 3 mm and Thickness 7 mm.
+    Start a new gear: Profile Plane, One Side, Distance, Flip side off, Thickness 7 mm.
+    Switch to Two Sides: Side 2's thickness is the default 5 mm, not 3 mm.
