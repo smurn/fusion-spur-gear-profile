@@ -2,12 +2,12 @@
 
 Status: **Version 0.9** (2026-10-18). It describes the add-in as implemented in version
 0.10.0. New since version 0.8: gear trains oriented from a layout sketch (§7), gears created
-in the active component (FEA-14), and start, direction and extent options like Extrude's
-(IN-18 to IN-29). Checked by hand so far: gears from a layout sketch in several components,
-moving circles in the layout sketch, the active component, a joined gear starting on a face
-(CHK-9), and direction and extent (manual checklist steps 75 to 83). The rest of the manual
-checklist for these features is still to be done. Not implemented yet: Symmetric's half
-and whole length (IN-27) and the To Object offsets (IN-28, IN-29), with D-34. Requirements have stable IDs
+in the active component (FEA-14), start, direction and extent options like Extrude's
+(IN-18 to IN-29), with icons and dark-theme icons (UI-11, UI-12). Checked by hand so far:
+gears from a layout sketch in several components, moving circles in the layout sketch, the
+active component, a joined gear starting on a face (CHK-9), and the start, direction and
+extent options with their dialog (manual checklist steps 75 to 95). The rest of the manual
+checklist for these features is still to be done. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
