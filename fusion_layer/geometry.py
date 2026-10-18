@@ -40,7 +40,7 @@ class Frame:
 
 def native(entity):
     """The entity in its own component, for entities picked through an occurrence."""
-    return getattr(entity, 'nativeObject', None) or entity
+    return entity.nativeObject or entity
 
 
 def is_gear_curve(entity) -> bool:
@@ -69,63 +69,6 @@ def frame_of(curve) -> Frame:
                                       c * start.z + s * side.z)
         y = normal.crossProduct(x)
     return Frame(origin, x, y, normal, 2 * geo.radius / CM, span)
-
-
-class AmbiguousOccurrence(gearcore.GearError):
-    """A native entity in a component that has several occurrences: which copy is
-    meant cannot be told."""
-
-
-def occurrence_of(entity, component: adsk.fusion.Component):
-    """The occurrence an entity was picked in (FEA-15), or None for the root
-    component. A proxy carries it. A native entity in a component that is used
-    once is in that one occurrence; with several, raises AmbiguousOccurrence."""
-    context = getattr(entity, 'assemblyContext', None)
-    if context:
-        return context
-    root = component.parentDesign.rootComponent
-    if component == root:
-        return None
-    occurrences = root.allOccurrencesByComponent(component)
-    if occurrences.count == 1:
-        return occurrences.item(0)
-    raise AmbiguousOccurrence('{} is used {} times; pick its curve in the assembly to tell which '
-                              'one is meant.'.format(component.name, occurrences.count))
-
-
-def to_assembly(frame: Frame, occurrence) -> Frame:
-    """The frame, given in its component's coordinates, in assembly coordinates:
-    moved by each occurrence's transform up the path to the root. Positions are
-    those at the current place in the timeline (SPIKE-7)."""
-    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
-    while occurrence is not None:
-        transform = native(occurrence).transform2   # relative to the parent component
-        origin.transformBy(transform)
-        for axis in axes:
-            axis.transformBy(transform)
-        occurrence = getattr(occurrence, 'assemblyContext', None)
-    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
-
-
-def mesh_layout(frame: Frame, mate: Frame) -> typing.Optional[typing.Tuple[float, float]]:
-    """Distance (mm) and direction from the mate's center to this gear's center,
-    measured in the mate's plane (DER-10, DER-11). None if the planes are not
-    parallel or the centers coincide (VAL-17)."""
-    if frame.normal.crossProduct(mate.normal).length > 1e-6:
-        return None
-    offset = mate.origin.vectorTo(frame.origin)
-    x, y = offset.dotProduct(mate.x) / CM, offset.dotProduct(mate.y) / CM
-    distance = math.hypot(x, y)
-    if distance < 1e-6:
-        return None
-    return distance, math.atan2(y, x)
-
-
-def angle_in(frame: Frame, other: Frame, angle: float) -> float:
-    """An angle measured in the other frame's plane, measured in this frame's
-    plane instead. The planes are parallel; their normals may point either way."""
-    direction = other.direction(angle)
-    return math.atan2(direction.dotProduct(frame.y), direction.dotProduct(frame.x))
 
 
 def source_bodies(base: adsk.fusion.BaseFeature) -> list:

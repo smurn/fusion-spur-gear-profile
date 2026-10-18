@@ -1,43 +1,62 @@
-"""Meshing with another gear: DER-10, DER-11, VAL-16, VAL-18.
+"""Meshing two gears: the pair rule TRN-6 and the center distance it is tested at.
 
-The main check places two real gear outlines by DER-11 at the DER-10 distance and
+The main check places two real gear outlines by TRN-6 at their working center distance and
 measures them: without backlash they must touch, with backlash each flank must
 have a clearance of half of it.
 """
 
 import dataclasses
 import math
+import typing
 
 import pytest
 
-from gearcore import (ERROR, WARNING, GearParams, gear_outline, ideal_center_distance, mesh_axis,
-                      mesh_issues, rotation_for_axis)
+from gearcore import GearParams, gear_outline, mesh_axis, rotation_for_axis
+from gearcore.derived import inv
 
 DEG = math.pi / 180
 FIT = 0.001   # fit tolerance of the outlines
 
 
+def ideal_center_distance(module: float, pressure_angle: float, z1: int, z2: int,
+                          x1: float, x2: float) -> typing.Optional[float]:
+    """The working center distance, at which two gears mesh without backlash (ISO 21771).
+    None if the profile shifts are so negative that no such distance exists. A test
+    reference only: the add-in does not check center distances (D-31)."""
+    target = inv(pressure_angle) + 2 * math.tan(pressure_angle) * (x1 + x2) / (z1 + z2)
+    if target <= 0:
+        return None
+    lo, hi = 0.0, math.pi / 2 - 1e-9   # inv rises monotonically from 0 on this interval
+    if inv(hi) < target:
+        return None
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if inv(mid) < target else (lo, mid)
+    working = (lo + hi) / 2
+    return module * (z1 + z2) / 2 * math.cos(pressure_angle) / math.cos(working)
+
+
 def test_ideal_distance_without_shift_is_the_reference_distance():
-    """DER-10"""
+    """Test reference: the working center distance."""
     assert ideal_center_distance(1.0, 20 * DEG, 20, 30, 0.0, 0.0) == pytest.approx(25.0)
     assert ideal_center_distance(2.0, 20 * DEG, 13, 31, 0.3, -0.3) == pytest.approx(44.0)
 
 
 def test_ideal_distance_with_shift_matches_a_published_example():
-    """DER-10. KHK gear technical reference, profile shifted spur gears: m = 3,
+    """Test reference. KHK gear technical reference, profile shifted spur gears: m = 3,
     alpha = 20 deg, z = 12 and 24, x = 0.6 and 0.36 give alpha_w = 26.0886 deg and
     a = 56.4999 mm."""
     assert ideal_center_distance(3.0, 20 * DEG, 12, 24, 0.6, 0.36) == pytest.approx(56.4999, abs=1e-3)
 
 
 def test_ideal_distance_does_not_exist_for_very_negative_shift():
-    """DER-10"""
+    """Test reference: the working center distance."""
     assert ideal_center_distance(1.0, 20 * DEG, 10, 10, -3.0, -3.0) is None
 
 
 @pytest.mark.parametrize('mate_teeth, teeth', [(20, 30), (13, 31), (9, 9)])
 def test_tooth_on_the_line_faces_a_gap(mate_teeth, teeth):
-    """DER-11: the mate's tooth points at this gear, so this gear has a gap
+    """TRN-6: the mate's tooth points at this gear, so this gear has a gap
     pointing back."""
     direction = 0.7
     axis = mesh_axis(direction, direction, mate_teeth, teeth)
@@ -47,7 +66,7 @@ def test_tooth_on_the_line_faces_a_gap(mate_teeth, teeth):
 
 
 def test_turning_the_mate_turns_this_gear_the_other_way():
-    """DER-11: like rolling pitch circles, by z_mate / z as much."""
+    """TRN-6: like rolling pitch circles, by z_mate / z as much."""
     mate_teeth, teeth, eps = 20, 30, 0.01
     a = mesh_axis(0.3, 0.1, mate_teeth, teeth)
     b = mesh_axis(0.3, 0.1 + eps, mate_teeth, teeth)
@@ -92,7 +111,7 @@ def placed(params, center, angle=0.0, mirror=False):
 
 
 def mesh_pair(z1, z2, x1, x2, backlash, mate_rotation, direction, mirror=False):
-    """Mate at the origin, this gear placed by DER-11 at the DER-10 distance.
+    """Mate at the origin, this gear placed by TRN-6 at the working center distance.
     Returns how deep this gear reaches into the mate, and the smallest gap,
     both near the line of centers."""
     m, alpha = 1.0, 20 * DEG
@@ -128,7 +147,7 @@ def mesh_pair(z1, z2, x1, x2, backlash, mate_rotation, direction, mirror=False):
     (20, 30, 0.0, 0.0, 0.37, 1.1, True),
 ])
 def test_meshed_gears_touch_without_backlash(z1, z2, x1, x2, mate_rotation, direction, mirror):
-    """DER-11, TST-2: at the ideal distance the flanks touch on both sides; the
+    """TRN-6, TST-2: at the ideal distance the flanks touch on both sides; the
     overlap is no deeper than the fit tolerance."""
     depth, gap = mesh_pair(z1, z2, x1, x2, 0.0, mate_rotation, direction, mirror)
     assert depth < 1.5 * FIT
@@ -137,27 +156,7 @@ def test_meshed_gears_touch_without_backlash(z1, z2, x1, x2, mate_rotation, dire
 
 @pytest.mark.parametrize('z1, z2, x1, x2, backlash', [(20, 30, 0.0, 0.0, 0.1), (9, 17, 0.4, 0.2, 0.05)])
 def test_meshed_gears_have_half_the_backlash_on_each_flank(z1, z2, x1, x2, backlash):
-    """DER-11, GEO-6, TST-2: centered in the backlash, each flank has j_bn / 2."""
+    """TRN-6, GEO-6, TST-2: centered in the backlash, each flank has j_bn / 2."""
     depth, gap = mesh_pair(z1, z2, x1, x2, backlash, 0.37, 0.8)
     assert depth == 0.0
     assert gap == pytest.approx(backlash / 2, abs=3 * FIT)
-
-
-# ----------------------------------------------------------------- validation --
-def test_module_and_pressure_angle_must_match():
-    """VAL-16"""
-    gear = GearParams(30.0)
-    ids = [i.id for i in mesh_issues(gear, GearParams(20.0, module=1.25), 25.0)]
-    assert ids == ['VAL-16']
-    ids = [i.id for i in mesh_issues(gear, GearParams(20.0, pressure_angle=25 * DEG), 25.0)]
-    assert ids == ['VAL-16']
-    assert all(i.severity == ERROR for i in mesh_issues(gear, GearParams(20.0, module=2.0), 25.0))
-
-
-def test_center_distance_warning():
-    """VAL-18: more than 0.01 m off is a warning."""
-    gear, mate = GearParams(30.0), GearParams(20.0)
-    assert mesh_issues(gear, mate, 25.0) == []
-    assert mesh_issues(gear, mate, 25.009) == []
-    issues = mesh_issues(gear, mate, 25.02)
-    assert [(i.id, i.severity) for i in issues] == [('VAL-18', WARNING)]
