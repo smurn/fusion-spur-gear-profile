@@ -3,7 +3,8 @@
 Status: **Draft 0.9** (2026-10-18). Version 0.8 describes the add-in as implemented in
 version 0.9.0. Draft 0.9 adds gear trains oriented from a layout sketch (§7), which are not
 implemented yet: TRN-1 to TRN-11, the train part of GEO-9, FEA-12 to FEA-14, UI-9, VAL-20 to
-VAL-24, D-27 to D-31, ARC-8 and the train checks in TST-2. Requirements have stable IDs
+VAL-24, D-27 to D-31, ARC-8 and the train checks in TST-2. It also adds a start option like
+Extrude's: IN-18 to IN-20, the start part of GEO-12, UI-10, VAL-25, VAL-26, D-32 and CHK-9. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
@@ -98,6 +99,9 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-13 | Flip side | off | Off: the gear extends from the sketch plane along its normal. On: the opposite side |
 | IN-14 | Bore diameter d_B | 0 mm | ≥ 0; 0 means no bore; upper limit see VAL-11 |
 | IN-15 | Operation | New Body | New Body or Join. Join needs no target selection (FEA-6) |
+| IN-18 | Start | Profile Plane | Profile Plane, Offset or Object, as in Extrude (GEO-12) |
+| IN-19 | Start offset | 0 mm | any; used with Offset and Object |
+| IN-20 | Start object | none | With Object: a planar face or construction plane parallel to the sketch plane, or a point: a vertex, sketch point or construction point (VAL-25, VAL-26) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -172,7 +176,12 @@ it a solid.
   through the full thickness. In arc mode only the part of the bore circle inside the sector
   is used (GEO-10).
 - **GEO-12** The solid is the outline extruded by the thickness b, perpendicular to the plane
-  of the selected curve, starting at that plane. IN-13 selects the side.
+  of the selected curve, starting at the start plane. IN-13 selects the side. The start plane
+  is parallel to the curve's plane, moved along its normal by:
+  - Profile Plane: 0, so the gear starts on the curve's plane.
+  - Offset: the start offset (IN-19), positive along the sketch normal, whatever IN-13 says.
+  - Object: the distance from the curve's plane to the object's plane (a face or construction
+    plane) or point, along the sketch normal, plus the start offset.
 
 ## 7. Gear trains
 
@@ -227,13 +236,16 @@ other (D-27).
 
 - **FEA-1** The gear is one custom feature. The timeline shows a single node for it, with the
   add-in's icon and a name of the form "Spur Gear1".
-- **FEA-2** The feature depends on the selected curve. It recomputes when the curve's center,
-  radius, plane or (for an arc) end angles change, and when any of its parameters change.
+- **FEA-2** The feature depends on the selected curve, and on the start object (IN-20) if
+  there is one. It recomputes when the curve's center, radius, plane or (for an arc) end angles
+  change, when the start object moves, and when any of its parameters change.
 - **FEA-3** The selected curve and its sketch are not modified.
 - **FEA-4** After every recompute the gear is centered on the selected curve's center, lies on
   its plane, and has the tooth count of DER-1 for the curve's current diameter.
-- **FEA-5** IN-2 to IN-12 and IN-14 are feature parameters. They appear in the parameters
-  dialog under the feature and accept expressions and user parameters.
+- **FEA-5** IN-2 to IN-12, IN-14 and IN-19 are feature parameters. They appear in the
+  parameters dialog under the feature and accept expressions and user parameters. Fusion
+  cannot add a parameter to an existing feature, so a gear created before IN-19 existed has no
+  start offset: it can use Profile Plane and Object, with no offset.
 - **FEA-6** New Body creates one new solid body. Join merges the gear into every visible solid
   body of the same component that it touches or overlaps, as Extrude does, and creates no
   additional body. The user does not select a target. The bodies are chosen when the gear is
@@ -280,8 +292,8 @@ other (D-27).
   a message: see VAL-12.
 - **UI-6** Creating a gear is a single undo step. So is each edit.
 - **UI-7** The create dialog starts with the inputs of the last gear that was created: all
-  numeric inputs (as entered, so references to user parameters are kept), flip side and
-  operation. The curve is not remembered. This lasts until the add-in is stopped; it is not
+  numeric inputs (as entered, so references to user parameters are kept), flip side,
+  operation and start (IN-18). The curve and the start object are not remembered. This lasts until the add-in is stopped; it is not
   saved. If a remembered expression is not valid in the current design, its value is used.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
   deviation are in a group named Advanced. It is collapsed unless one of them differs from
@@ -290,6 +302,8 @@ other (D-27).
   is disabled and the info box says so: how many gears the train has, how many circles this
   one touches, and whether the train is oriented by a start line or, without one, by its
   first circle.
+- **UI-10** Start (IN-18) is a drop-down right before Thickness. The start offset is shown for
+  Offset and Object, the start object selection for Object only.
 
 ## 10. Validation
 
@@ -311,6 +325,8 @@ other (D-27).
 | VAL-21 | A loop in the gear's train does not mesh (TRN-8) | error |
 | VAL-22 | The layout sketch's plane is not parallel to the gear's plane (TRN-10) | error |
 | VAL-23 | Two circles of the gear's train nearly touch (TRN-11) | warning |
+| VAL-25 | Start is Object and no start object is selected, or it no longer exists | error |
+| VAL-26 | The start object is a plane that is not parallel to the curve's plane | error |
 | VAL-24 | The gear's curve or its layout sketch is in another component than the gear, and the curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has several occurrences). Pick it in the assembly instead | error |
 
 A value outside the range given in §4 is an error and is reported with the ID of that input.
@@ -376,6 +392,10 @@ Resolved on 2026-10-18, after SPIKE-8:
   independently. Loops are allowed if they mesh (TRN-3, TRN-8).
 - **D-31** There is no center-distance check. With profile shift, the circles to draw are the
   working pitch circles, which touch at the working center distance.
+- **D-32** Start options as in Extrude: Profile Plane, Offset and Object (IN-18 to IN-20). The
+  offset is along the sketch normal, independent of the flip side, and also applies to
+  Object. Only planes parallel to the sketch, and points, can be start objects: a gear on a
+  tilted face makes no sense.
 
 ## 13. Feasibility
 
@@ -395,6 +415,8 @@ of the add-in (2026-10-11):
   (FEA-10): works.
 - **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): works.
 - **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
+- **CHK-9** Open: a gear that joins a body and starts on a face of that same body (IN-20). A
+  joined gear that depended on its target body did not appear at all in an early test.
 
 The gear-train design was tested in SPIKE-8: projections lead back to the layout sketch, the
 dependency on it is accepted in the root component and through an occurrence, and every
@@ -417,8 +439,8 @@ change of the layout sketch reached every gear, created in any order.
 - **ARC-5** The add-in has no dependencies outside Fusion's bundled Python (D-13).
 - **ARC-6** An edit rolls the timeline back to before the feature only while the change is
   applied, inside the command's own transaction (UI-6).
-- **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side and operation
-  are stored with the feature as named values.
+- **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Flip side, operation
+  and start are stored with the feature as named values, the start object as a dependency.
 - **ARC-8** The train rules (TRN-2 to TRN-9, TRN-11) are `gearcore` functions on plain data:
   the layout circles, arcs and lines in the layout sketch's coordinates in, tooth axes and
   issues out. The Fusion layer finds the layout circle (TRN-1), reads the layout sketch and
