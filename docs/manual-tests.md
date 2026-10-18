@@ -202,3 +202,24 @@ center fixed by dimensions or tangent constraints:
     disabled with a tooltip; Object works.
 74. Create a gear with Start set to Offset 2 mm; start a second one: it starts with Offset
     2 mm again (UI-7), and no object is preselected.
+
+## Direction and extent (IN-21 to IN-26, GEO-12, UI-11)
+
+75. In a new gear's dialog: after Start come Direction (One Side), Flip side, Extent
+    (Distance) and Thickness. Nothing for side 2 is shown.
+76. Direction Symmetric: Flip side and Extent disappear. With Thickness 6 mm the gear runs
+    from 3 mm below to 3 mm above the start; the info box shows the face width.
+77. Direction Two Sides, Thickness 5 mm, side 2 Thickness 2 mm: the gear runs from 2 mm below
+    to 5 mm above the start. Flip side swaps them.
+78. One Side with Extent To Object: pick a construction plane 8 mm above the sketch: the gear
+    ends on it; the info box shows a face width of 8 mm. Pick one 4 mm below instead: the gear
+    goes down to it. Move the plane: the gear follows.
+79. Two Sides with side 2 To Object, a point 3 mm below, and side 1 a distance of 5 mm: the
+    gear runs from 3 mm below to 5 mm above.
+80. Start Object and Extent To Object on the same plane: error that the gear has no thickness;
+    OK is disabled.
+81. A Join gear whose extent goes to a face of the body it joins: OK is available, the gear
+    joins on OK, and it follows the face. Edit it: the extent object is kept ("as before").
+82. Edit a gear made before this version: it opens with One Side and Distance; Thickness
+    (side 2) is disabled.
+83. Create a Symmetric gear; start a new one: it starts with Symmetric again (UI-7).
