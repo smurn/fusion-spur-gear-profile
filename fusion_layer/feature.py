@@ -428,9 +428,10 @@ class SpurGearFeature:
                 advanced.append((pid, label, kind, default))
                 continue
             if pid == 'start_offset':
-                self._add_choice(inputs, 'start', 'Start', (PROFILE_PLANE, OFFSET, OBJECT), extent.start)
+                self._add_choice(inputs, 'start', 'Start', 'start', (PROFILE_PLANE, OFFSET, OBJECT),
+                                 extent.start)
             elif pid == 'thickness':
-                self._add_choice(inputs, 'direction', 'Direction',
+                self._add_choice(inputs, 'direction', 'Direction', 'direction',
                                  (gearcore.ONE_SIDE, gearcore.TWO_SIDES, gearcore.SYMMETRIC),
                                  extent.direction)
                 # IN-27, shown like Extrude's: a row of two icon buttons.
@@ -439,10 +440,11 @@ class SpurGearFeature:
                     measurement.listItems.add(name, (name == HALF_LENGTH) == extent.half_length,
                                               os.path.join(self._resources, 'measurement', folder))
                 inputs.addBoolValueInput('flip', 'Flip side', True, '', extent.flip)
-                self._add_choice(inputs, 'extent', 'Extent', (DISTANCE, TO_OBJECT), extent.extent)
+                self._add_choice(inputs, 'extent', 'Extent Type', 'extent', (DISTANCE, TO_OBJECT),
+                                 extent.extent)
             elif pid == 'thickness2':
-                self._add_choice(inputs, 'extent2', 'Extent (side 2)', (DISTANCE, TO_OBJECT),
-                                 extent.extent2)
+                self._add_choice(inputs, 'extent2', 'Extent Type (side 2)', 'extent',
+                                 (DISTANCE, TO_OBJECT), extent.extent2)
             value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
             if feature and parameter_of(feature, pid) is None:   # FEA-5
                 value_input.isEnabled = False
@@ -478,12 +480,15 @@ class SpurGearFeature:
         for event, base_class, callback in events:
             self._listen(event, base_class, callback, self._command_handlers)
 
-    @staticmethod
-    def _add_choice(inputs: adsk.core.CommandInputs, input_id: str, label: str, names, current: str):
+    def _add_choice(self, inputs: adsk.core.CommandInputs, input_id: str, label: str, icons: str,
+                    names, current: str):
+        """A drop-down with an icon for each choice, as in Extrude (UI-11). The icons are
+        in resources/<icons>/<name in lower case, words joined by _>."""
         choice = inputs.addDropDownCommandInput(input_id, label,
-                                                adsk.core.DropDownStyles.TextListDropDownStyle)
+                                                adsk.core.DropDownStyles.LabeledIconDropDownStyle)
         for name in names:
-            choice.listItems.add(name, name == current)
+            folder = os.path.join(self._resources, icons, name.lower().replace(' ', '_'))
+            choice.listItems.add(name, name == current, folder)
 
     def _initial(self, pid: str, kind: str, default: str):
         """What a numeric input starts with, and whether that differs from its default:
