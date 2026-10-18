@@ -8,9 +8,10 @@ from .mesh import mesh_axis, rotation_for_axis
 from .outline import Arc, Circle, Line, Outline, gear_outline
 from .params import GearError, GearParams
 from .spline import Spline
+from .train import LayoutCurve, LayoutLine, Orientation, orientation
 from .validation import ERROR, INFO, WARNING, Issue, errors, validate
 
-__all__ = ['Arc', 'Circle', 'Derived', 'ERROR', 'GearError', 'GearParams', 'INFO', 'Issue', 'Line',
-           'Outline', 'Spline', 'WARNING', 'derive', 'errors', 'gear_outline',
-           'mesh_axis', 'rotation_for_axis', 'tooth_axes',
-           'tooth_count', 'validate']
+__all__ = ['Arc', 'Circle', 'Derived', 'ERROR', 'GearError', 'GearParams', 'INFO', 'Issue',
+           'LayoutCurve', 'LayoutLine', 'Line', 'Orientation', 'Outline', 'Spline', 'WARNING',
+           'derive', 'errors', 'gear_outline', 'mesh_axis', 'orientation', 'rotation_for_axis',
+           'tooth_axes', 'tooth_count', 'validate']
