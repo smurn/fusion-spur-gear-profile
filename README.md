@@ -37,7 +37,9 @@ opened without it shows each gear as last computed.
    reference diameter is module times tooth count, so it usually differs a little from the
    curve you drew.
 4. Set **Thickness**, and a **Bore diameter** if you want a hole. **Flip side** puts the gear
-   on the other side of the sketch plane.
+   on the other side of the sketch plane. **Start** works as in Extrude: from the sketch plane
+   (Profile Plane), moved along the sketch normal by an offset (Offset), or from a parallel
+   face, construction plane or point (Object), optionally with an offset too.
 5. Choose the **Operation**: New Body, or Join to merge the gear into every body it touches.
 6. OK. The gear appears as one "Spur Gear" feature in the timeline.
 

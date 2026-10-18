@@ -180,3 +180,25 @@ center fixed by dimensions or tangent constraints:
     meshes with the one in Gear T. Edit the gear in Gear S: it stays in Gear S.
 66. Create a gear with the root component active from a circle in the layout: it is in the
     root component, as before.
+
+## Start (IN-18 to IN-20, GEO-12, UI-10, CHK-9)
+
+67. In a new gear's dialog, Start is right before Thickness and set to Profile Plane; there is
+    no offset or object input. The gear starts on the sketch plane, as before.
+68. Set Start to Offset and the offset to 3 mm: the gear moves 3 mm along the sketch normal.
+    Turn on Flip side: the gear now extends the other way from the same start, 3 mm up.
+    Set -3 mm: it starts below the sketch plane.
+69. Set Start to Object and pick a construction plane parallel to the sketch, 10 mm away: the
+    gear starts on it. Set the offset to 1 mm: it starts 1 mm beyond the plane. Move the
+    plane (edit its offset): the gear follows.
+70. Pick a point as the object (a sketch point or a body vertex): the gear starts on the plane
+    through the point, parallel to the sketch.
+71. Try a planar face that is not parallel to the sketch: the info box reports an error and OK
+    is disabled. Curved faces cannot be picked.
+72. CHK-9: a plate body, and a gear set to Join that starts on the plate's top face (Object).
+    Note whether the gear appears and joins. Then change the plate's thickness: does the gear
+    follow the face?
+73. Edit a gear made before this version: Start shows Profile Plane; the offset input is
+    disabled with a tooltip; Object works.
+74. Create a gear with Start set to Offset 2 mm; start a second one: it starts with Offset
+    2 mm again (UI-7), and no object is preselected.
