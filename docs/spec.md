@@ -108,10 +108,10 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-19 | Start offset | 0 mm | any; used with Offset and Object |
 | IN-20 | Start object | none | With Object: a planar face or construction plane parallel to the sketch plane, or a point: a vertex, sketch point or construction point (VAL-25, VAL-26) |
 | IN-21 | Direction | One Side | One Side, Two Sides or Symmetric, as in Extrude (GEO-12) |
-| IN-22 | Extent | Distance | Distance or To Object, for side 1. Symmetric is always a distance |
+| IN-22 | Extent Type | Distance | Distance or To Object, for side 1. Symmetric is always a distance |
 | IN-23 | Extent object | none | With To Object: as IN-20 |
 | IN-24 | Thickness, side 2 | 5 mm | > 0; with Two Sides and a distance for side 2 |
-| IN-25 | Extent, side 2 | Distance | Distance or To Object, with Two Sides |
+| IN-25 | Extent Type, side 2 | Distance | Distance or To Object, with Two Sides |
 | IN-26 | Extent object, side 2 | none | With Two Sides and To Object for side 2: as IN-20 |
 | IN-27 | Measurement | Whole Length | With Symmetric: Whole Length (the thickness is the face width) or Half Length (the thickness goes each way from the start) |
 | IN-28 | Extent offset | 0 mm | any; with To Object for side 1. Positive moves the end past the object, away from the start |
@@ -340,9 +340,10 @@ other (D-27).
   selected, and the info box says it is kept. A face of a body the gear joins exists only
   before the join, so it cannot be selected at the end of the timeline (CHK-9).
 - **UI-11** Direction (IN-21) follows the start inputs; with Symmetric, Measurement (IN-27)
-  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side and Extent
-  (IN-22). Then Thickness, or the extent object and its offset. With Two Sides, Extent,
-  Thickness, the extent object and the offset of side 2 follow. Each input is shown only when
+  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side and Extent Type
+  (IN-22). Then Thickness, or the extent object and its offset. With Two Sides, Extent Type,
+  Thickness, the extent object and the offset of side 2 follow. Start, Direction and Extent
+  Type are drop-downs with an icon for each choice, as in Extrude. Each input is shown only when
   it is used. Extent objects
   behave like the start object when a gear is edited (UI-10). The info box shows the face
   width when it differs from the thickness input.
