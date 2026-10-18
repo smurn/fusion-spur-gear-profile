@@ -64,9 +64,9 @@ NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or 
 PARAMS = (
     ('module', 'Module', 'length', '1 mm'),
     ('start_offset', 'Start offset', 'length', '0 mm'),
-    ('thickness', 'Thickness', 'length', '5 mm'),
+    ('thickness', 'Distance', 'length', '5 mm'),
     ('extent_offset', 'Extent offset', 'length', '0 mm'),
-    ('thickness2', 'Thickness (side 2)', 'length', '5 mm'),
+    ('thickness2', 'Distance (side 2)', 'length', '5 mm'),
     ('extent_offset2', 'Extent offset (side 2)', 'length', '0 mm'),
     ('bore', 'Bore diameter', 'length', '0 mm'),
     ('rotation', 'Start rotation (% of pitch)', 'number', '0'),
@@ -165,7 +165,7 @@ class Extent:
     """Where the gear begins and ends (GEO-12): start, direction and extents."""
     start: str = PROFILE_PLANE                # IN-18
     direction: str = gearcore.ONE_SIDE        # IN-21
-    flip: bool = False                        # IN-13
+    flip: bool = False                        # only on gears made before D-36
     extent: str = DISTANCE                    # IN-22
     extent2: str = DISTANCE                   # IN-25
     objects: dict = dataclasses.field(default_factory=dict)   # by OBJECT_INPUTS id
@@ -282,7 +282,8 @@ def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None
         if kind == TO_OBJECT:   # IN-28, IN-29
             return gearcore.Side(height=ev.heights[object_id] / CM,
                                  offset=values.get(offset_id, 0.0) / CM)
-        return gearcore.Side(distance=values.get(pid, 0.0) / CM)
+        # A gear made before D-36 may have a flip, which turned both sides round.
+        return gearcore.Side(distance=values.get(pid, 0.0) / CM * (-1.0 if extent.flip else 1.0))
 
     first = side('extent_object', 'thickness', 'extent_offset',
                  DISTANCE if extent.direction == gearcore.SYMMETRIC else extent.extent)
@@ -291,7 +292,7 @@ def evaluate(curve, values: dict, target, extent: typing.Optional[Extent] = None
     ev.issues = gearcore.extent_issues(extent.direction, first, second)
     if ev.issues:
         return ev
-    low, high = gearcore.span(start, extent.direction, extent.flip, first, second, extent.half_length)
+    low, high = gearcore.span(start, extent.direction, first, second, extent.half_length)
     if high - low < 1e-6:
         ev.issues.append(gearcore.Issue('VAL-27', gearcore.ERROR, 'The gear has no thickness: its '
                                         'start and end are on the same plane.'))
@@ -336,9 +337,7 @@ def info_text(ev: Evaluation) -> str:
         if d.tip_thickness is not None:
             lines.append('Tooth thickness {:.3f}, at the tip {:.3f} mm'.format(
                 d.tooth_thickness, d.tip_thickness))
-        e = ev.extent
-        if e and (e.direction != gearcore.ONE_SIDE or e.extent == TO_OBJECT):   # UI-11
-            lines.append('Face width {:.3f} mm'.format(ev.params.thickness))
+        lines.append('Face width {:.3f} mm'.format(ev.params.thickness))   # UI-11
     if oriented_by_layout(ev):   # UI-9
         o = ev.train.orientation
         by = ('oriented by its start line' if o.start_line else
@@ -467,7 +466,6 @@ class SpurGearFeature:
                 for name, folder in ((HALF_LENGTH, 'half_length'), (WHOLE_LENGTH, 'whole_length')):
                     measurement.listItems.add(name, (name == HALF_LENGTH) == extent.half_length,
                                               os.path.join(self._resources, 'measurement', folder))
-                inputs.addBoolValueInput('flip', 'Flip side', True, '', extent.flip)
                 self._add_side(inputs, 'one', extent.extent)
                 side1 = inputs.addGroupCommandInput('side1', 'Side 1')
                 self._add_side(side1.children, 'side1', extent.extent)
@@ -521,7 +519,7 @@ class SpurGearFeature:
         ids = SIDE_SETS[set_name]
         thickness, offset = SET_PARAMS[set_name]
         self._add_choice(inputs, ids['extent'], 'Extent Type', 'extent', (DISTANCE, TO_OBJECT), current)
-        self._add_value(inputs, ids['thickness'], thickness, 'Thickness')
+        self._add_value(inputs, ids['thickness'], thickness, 'Distance')
         self._add_object(inputs, ids['object'], 'Extent object')
         self._add_value(inputs, ids['offset'], offset, 'Extent offset')
 
@@ -546,6 +544,10 @@ class SpurGearFeature:
             parameter = parameter_of(self._editing, pid)
             if parameter is None:   # FEA-5: made before this parameter existed
                 return by_string(default), False
+            if pid in ('thickness', 'thickness2') and named_value(self._editing, 'flip', '0') == '1':
+                # D-36: a flipped gear shows its distances negated, which keeps its shape;
+                # OK then clears the flip.
+                return by_string('-({})'.format(parameter.expression)), True
             return by_string(parameter.expression), abs(parameter.value - standard) > 1e-9
         if pid in self._last_used.get('params', {}) and pid not in NOT_REMEMBERED:
             expression, value = self._last_used['params'][pid]
@@ -583,9 +585,8 @@ class SpurGearFeature:
             expressions[pid], values[pid] = value_input.expression, value_input.value
         objects = {'start_object': selected('start_object'), 'extent_object': selected(side1['object']),
                    'extent_object2': selected('extent_object2')}
-        flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
         measurement = adsk.core.ButtonRowCommandInput.cast(inputs.itemById('measurement')).selectedItem
-        extent = Extent(choice('start'), direction, flip, choice(side1['extent']), choice('extent2'),
+        extent = Extent(choice('start'), direction, False, choice(side1['extent']), choice('extent2'),
                         objects, bool(measurement) and measurement.name == HALF_LENGTH)
         return Settings(selected('curve'), choice('operation'), expressions, values, extent)
 
@@ -679,7 +680,7 @@ class SpurGearFeature:
             one = e.direction == gearcore.ONE_SIDE
             to1, to2 = e.extent == TO_OBJECT, e.extent2 == TO_OBJECT
             shown = {'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
-                     'measurement': symmetric, 'flip': not symmetric and (two or not to1),
+                     'measurement': symmetric,
                      'extent': one, 'thickness': symmetric or (one and not to1),
                      'extent_object': one and to1, 'extent_offset': one and to1,
                      'side1': two, 'side2': two,
@@ -832,9 +833,9 @@ class SpurGearFeature:
 
     @staticmethod
     def _store_extent(feature: adsk.fusion.CustomFeature, extent: Extent):
-        """Start, direction, extents and flip side as named values (ARC-7)."""
+        """Start, direction, extents and measurement as named values (ARC-7)."""
         values = feature.customNamedValues
-        values.addOrSetValue('flip', '1' if extent.flip else '0')
+        values.addOrSetValue('flip', '1' if extent.flip else '0')   # only old gears have one (D-36)
         values.addOrSetValue('start', extent.start)
         values.addOrSetValue('direction', extent.direction)
         values.addOrSetValue('extent', extent.extent)
