@@ -3,9 +3,9 @@
     python tools/make_icons.py
 
 The command icon is a real gear outline from gearcore, filled with anti-aliasing.
-The Measurement buttons (UI-11) show a body seen from the side, centered on the
-start plane, with a dimension across its whole width or from the plane to one
-side, like Extrude's. Pure Python, no image library needed.
+The icons of the start, direction, extent type and measurement choices (UI-11) are
+side views like Extrude's: the sketch plane as a dark line, the body extruding to
+the right, objects in grey, dimensions in blue. Pure Python, no image library needed.
 """
 
 import math
@@ -75,29 +75,65 @@ def write_png(path: str, rgba):
 
 
 BODY = (150, 170, 190)     # the extruded body, seen from the side
-PLANE = (90, 90, 90)       # the start plane
-ARROW = FILL               # the dimension
+PLANE = (90, 90, 90)       # the sketch or start plane
+OBJECT = (120, 120, 120)   # a start or extent object
+ARROW = FILL               # dimensions and directions
+
+BODY_TOP, BODY_BOTTOM = 0.22, 0.55   # the body's height in the icon
+ARROW_Y = 0.76                       # where dimensions run, below the body
 
 
-def button(size: int, half: bool):
-    """A Measurement button: shapes in a unit square, y down, drawn with
-    SAMPLES x SAMPLES samples per pixel, later shapes over earlier ones."""
-    left = 0.5 if half else 0.08
+def body(x0, x1):
+    return BODY, lambda x, y: x0 <= x <= x1 and BODY_TOP <= y <= BODY_BOTTOM
 
-    def body(x, y):
-        return 0.12 <= x <= 0.88 and 0.22 <= y <= 0.55
 
-    def plane(x, y):
-        return abs(x - 0.5) <= 0.045 and 0.08 <= y <= 0.92
+def plane(x):
+    return PLANE, lambda x_, y: abs(x_ - x) <= 0.045 and 0.08 <= y <= 0.92
 
-    def arrow(x, y):
-        line = left <= x <= 0.92 and abs(y - 0.76) <= 0.04
-        head_right = 0.76 <= x <= 0.92 and abs(y - 0.76) <= (0.92 - x) * 0.9
-        head_left = not half and 0.08 <= x <= 0.24 and abs(y - 0.76) <= (x - 0.08) * 0.9
-        tick = half and abs(x - left) <= 0.035 and 0.64 <= y <= 0.88
-        return line or head_right or head_left or tick
 
-    shapes = ((BODY, body), (PLANE, plane), (ARROW, arrow))
+def obj(x):
+    """A start or extent object: a thick grey bar the height of the icon."""
+    return OBJECT, lambda x_, y: abs(x_ - x) <= 0.07 and 0.12 <= y <= 0.66
+
+
+def arrow(x0, x1, left=True, right=True, ticks=False):
+    """A dimension from x0 to x1 below the body, with arrow heads, and with ticks
+    at the ends that have none."""
+    def inside(x, y):
+        dy = abs(y - ARROW_Y)
+        shaft = x0 <= x <= x1 and dy <= 0.04
+        head_r = right and x1 - 0.16 <= x <= x1 and dy <= (x1 - x) * 0.9
+        head_l = left and x0 <= x <= x0 + 0.16 and dy <= (x - x0) * 0.9
+        ends = [x0] * (not left) + [x1] * (not right)   # ticks where there is no head
+        tick = ticks and any(abs(x - e) <= 0.035 for e in ends) and 0.64 <= y <= 0.88
+        return shaft or head_r or head_l or tick
+    return ARROW, inside
+
+
+#: The side views, by resource folder: shapes drawn in order, later over earlier.
+SIDE_VIEWS = {
+    # Measurement (IN-27): the body centered on the start plane.
+    'measurement/half_length': [body(0.12, 0.88), plane(0.5), arrow(0.5, 0.92, left=False, ticks=True)],
+    'measurement/whole_length': [body(0.12, 0.88), plane(0.5), arrow(0.08, 0.92)],
+    # Start (IN-18): where the body begins, relative to the sketch plane.
+    'start/profile_plane': [body(0.3, 0.88), plane(0.3)],
+    'start/offset': [body(0.56, 0.92), plane(0.1), arrow(0.1, 0.56)],
+    'start/object': [body(0.55, 0.9), plane(0.16), obj(0.5)],
+    # Direction (IN-21): which way the body goes from the start.
+    'direction/one_side': [body(0.3, 0.88), plane(0.3), arrow(0.3, 0.92, left=False)],
+    'direction/two_sides': [body(0.1, 0.9), plane(0.3), arrow(0.06, 0.3, right=False),
+                            arrow(0.3, 0.94, left=False)],
+    'direction/symmetric': [body(0.12, 0.88), plane(0.5), arrow(0.06, 0.5, right=False),
+                            arrow(0.5, 0.94, left=False)],
+    # Extent type (IN-22, IN-25): how far it goes.
+    'extent/distance': [body(0.16, 0.8), plane(0.16), arrow(0.16, 0.8, ticks=True)],
+    'extent/to_object': [body(0.16, 0.74), plane(0.16), obj(0.81), arrow(0.16, 0.74, left=False)],
+}
+
+
+def side_view(size: int, shapes):
+    """An icon drawn from shapes in a unit square, y down, with SAMPLES x SAMPLES
+    samples per pixel."""
     rows = []
     for row in range(size):
         line = []
@@ -130,12 +166,12 @@ def main():
         teeth = 8 if size <= 16 else 12
         png(os.path.join(out, name), coverage(gear_loops(teeth), size))
         print(name, size, 'px,', teeth, 'teeth')
-    for folder, half in (('half_length', True), ('whole_length', False)):
-        path = os.path.join(out, 'measurement', folder)
+    for folder, shapes in SIDE_VIEWS.items():
+        path = os.path.join(out, *folder.split('/'))
         os.makedirs(path, exist_ok=True)
         for name, size in FILES:
-            write_png(os.path.join(path, name), button(size, half))
-        print('measurement/' + folder)
+            write_png(os.path.join(path, name), side_view(size, shapes))
+        print(folder)
 
 
 if __name__ == '__main__':
