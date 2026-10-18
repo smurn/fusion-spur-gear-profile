@@ -256,3 +256,48 @@ Findings:
   not reach the gear. So driving joints does not re-align or slow down the gears, but
   components must be in place, at the gear's point in the timeline, when the gears are
   created. Whether a gear created after a joint uses the joint's position was not tested.
+
+## SPIKE-8 Gears oriented from a layout sketch (added)
+
+Question: can gears that know nothing of each other be oriented from one layout sketch that
+holds the circles of all gears? Circles touching from outside mesh; an optional line from a
+circle's center fixes where a tooth points, at most one per train. Code in
+`spikes/LayoutSketchSpike`, one run on Fusion 2705.1.30.
+
+Each document has a layout sketch with two trains (A–B–C with a start line at A, and D–E) and
+a circle F concentric with A. Each of A to E has its own component, turned and moved, with a
+linked projection of its layout circle (`Sketch.project2(..., True)`) and a gear on it. The
+gears were created in the order E, C, A, D, B. As in SPIKE-6 and 7 each gear is a marker
+cylinder at its phase, here with a simplified mesh rule; the plumbing was under test. Three
+variants: the gear depends on its projected circle and on the layout sketch in the root
+component, on only its own layout circle, or on the layout sketch in a turned and moved
+"Layout" component through its occurrence.
+
+| Check | Layout sketch in root | Own layout circle only | Layout sketch in a component |
+|---|---|---|---|
+| Projection into the gear component's own sketch | works | works | works |
+| Dependency accepted | yes (native sketch) | yes (native circle) | yes (sketch through the occurrence) |
+| Gears created in an arbitrary timeline order | correct | correct | correct |
+| B moves around A | B and C follow | B and C follow | B and C follow |
+| Train 1's start line turns (no circle changes) | A, B and C turn | A, B and C turn | A, B and C turn |
+| A start line is added to train 2 (no circle changes) | D and E turn | D and E turn | D and E turn |
+| A grows, B and C stay tangent | all follow | all follow | all follow |
+| Train 2's start line turns inside a command | D and E turn | D and E turn | D and E turn |
+| A second start line in train 1 | the gears' computes fail | same | same |
+
+Findings:
+
+- **The approach works.** Gear features that know nothing of each other, in separate turned
+  components, in any timeline order, all came out where the layout puts them, and followed
+  every change of the layout.
+- **A projected circle leads back to its layout circle** through `referencedEntity`: the
+  native circle for a layout in the root component, a proxy through the occurrence for a
+  layout in another component. Coordinates came out right in both cases.
+- **Any change in the layout sketch recomputes every gear projected from it**, even the
+  control that depended only on its own layout circle, and even gears of the other train.
+  Fusion recomputes the whole sketch and with it every linked projection. A dependency on
+  the layout sketch itself is therefore not strictly needed, but it is accepted and makes the
+  intent explicit.
+- **A failed compute makes the API call that triggered it raise.** Adding the second start
+  line through the API raised "Compute Failed" for every gear that reported an error. (The
+  spike failed the whole sketch, not just the affected train; that was a spike shortcut.)

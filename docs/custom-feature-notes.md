@@ -136,6 +136,8 @@ finally:
   SPIKE-6) With a feature that had lost its body in the document, no feature recomputed after
   any edit, and Compute All ran the handlers but changed no body. Test variants in separate
   documents.
+- **A failed compute makes the API call that triggered it raise** "Compute Failed", when the
+  change was made through the API. (Observed, SPIKE-8)
 - **Report failure with a predefined message id.** (Confirmed)
   `args.computeStatus.statusMessages.addError('DRPOINT_COMPUTE_FAILED', '')` turns the feature
   red in the timeline. Free text is not accepted, so log the details. If the handler changes
@@ -246,6 +248,11 @@ To match that (Confirmed):
   point. Moving an occurrence later (with the position captured) or driving a joint does not
   trigger a recompute, and Compute All still uses the old positions.
 - A proxy sketch curve's `worldGeometry` is in assembly coordinates. (Confirmed, SPIKE-7)
+- **A linked projection leads back to its source** through `SketchEntity.referencedEntity`:
+  native for a source in the root component, a proxy through the occurrence for a source in
+  another component. (Confirmed, SPIKE-8)
+- **Any change in a sketch recomputes every feature that depends on a linked projection of
+  any of its curves**, not just of the curve that changed. (Confirmed, SPIKE-8)
 
 - Create the features in the component that owns the selected entity
   (`native.parentSketch.parentComponent.features`). (Confirmed)
