@@ -40,7 +40,8 @@ def _sketch_frame(sketch: adsk.fusion.Sketch) -> Frame:
 
 
 def _read(sketch: adsk.fusion.Sketch):
-    """The layout circles (circles before arcs, TRN-7) and lines, in the sketch's
+    """The layout circles (circles before arcs, TRN-7) and the lines that are not
+    construction lines (TRN-5), in the sketch's
     own coordinates (mm), and the native curves in the same order."""
     curves, entities = [], []
     circles, arcs = sketch.sketchCurves.sketchCircles, sketch.sketchCurves.sketchArcs
@@ -60,6 +61,8 @@ def _read(sketch: adsk.fusion.Sketch):
     lines = []
     for i in range(sketch.sketchCurves.sketchLines.count):
         line = sketch.sketchCurves.sketchLines.item(i)
+        if line.isConstruction:
+            continue   # TRN-5: construction lines are helpers, never start lines
         s, e = line.startSketchPoint.geometry, line.endSketchPoint.geometry
         lines.append(gearcore.LayoutLine((s.x / CM, s.y / CM), (e.x / CM, e.y / CM)))
     return curves, lines, entities

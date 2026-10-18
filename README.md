@@ -84,7 +84,7 @@ turned so that every tooth faces a tooth space of its neighbor.
 - Change the layout (move a circle, resize one) and every gear follows.
 - A start line fixes where a tooth points: a line from a circle's center to a point on that
   circle. One per train at most. Without one, the train's first circle in the sketch has a
-  tooth on the sketch's X axis.
+  tooth on the sketch's X axis. Construction lines are ignored, so they can serve as helpers.
 - A sketch can hold several separate trains. Circles on a common center are not connected,
   so gears on one shaft are turned independently.
 - All gears on a layout sketch must have the same module. With profile shift, draw the

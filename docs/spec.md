@@ -265,7 +265,8 @@ other (D-27).
 - **TRN-5** Start line. A sketch line of the layout sketch with one end on a layout circle's
   center and the other on that circle (both within 0.001 mm) is a start line of that circle.
   It belongs to that circle only, so circles on a common center can each have one. A train
-  has at most one start line (VAL-20).
+  has at most one start line (VAL-20). Construction lines are never start lines: they are
+  helpers, for example for dimensioning the layout.
 - **TRN-6** Pair rule. For two touching circles, where circle 1 has a tooth axis at θ₁:
   with β the direction from circle 1's center to circle 2's and u = frac((β − θ₁) / τ₁),
   circle 2 has a tooth axis at θ₂ = β + π − (½ − u)·τ₂. A tooth of one then faces a tooth

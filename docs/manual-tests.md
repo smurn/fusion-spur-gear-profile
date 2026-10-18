@@ -299,3 +299,10 @@ to it at 100 deg. Module 1 mm.
      starts unticked (UI-7). Change Parameters lists Extra teeth.
 108. A sector gear made before this version keeps Automatic extra teeth off, and its Extra
      teeth input is disabled. It may have one more tooth at each end than before (D-37).
+
+## Construction lines (TRN-5)
+
+109. In train 1, turn the start line on A into a construction line: it no longer counts. The
+     info box says "no start line", and the train turns to its first circle. Turn it back
+     into a normal line: the train follows it again. A construction line from C's center to
+     C next to it gives no VAL-20 error.
