@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from gearcore import Arc, GearError, GearParams, Line, Spline, derive, gear_outline
+from gearcore import Arc, GearError, GearParams, Line, Spline, derive, gear_outline, sector
 from gearcore.profile import ToothProfile
 
 DEG = math.pi / 180
@@ -120,7 +120,7 @@ def test_sector_offset_moves_the_toothed_profile_only(name):
     """GEO-7, GEO-10: teeth and root circle are offset; the radial edges and the bore
     stay where they are."""
     p = ARC_CASES[name]
-    delta, half = p.print_offset, p.arc_span / 2
+    delta, sec = p.print_offset, sector(p)
     plain = gear_outline(dataclasses.replace(p, print_offset=0.0, tolerance=FINE))
     moved = gear_outline(dataclasses.replace(p, tolerance=FINE))
     assert moved.max_gap() < 1e-9
@@ -133,10 +133,10 @@ def test_sector_offset_moves_the_toothed_profile_only(name):
     edge_in, edge_out = moved.segments[-closing], moved.segments[-1]
     inner = p.bore / 2
     flat = lambda pt: [round(c, 9) for c in pt]
-    assert flat(edge_in.start) == flat((rf * math.cos(half), rf * math.sin(half)))
-    assert flat(edge_in.end) == flat((inner * math.cos(half), inner * math.sin(half)))
-    assert flat(edge_out.start) == flat((inner * math.cos(half), -inner * math.sin(half)))
-    assert flat(edge_out.end) == flat((rf * math.cos(half), -rf * math.sin(half)))
+    assert flat(edge_in.start) == flat((rf * math.cos(sec.end), rf * math.sin(sec.end)))
+    assert flat(edge_in.end) == flat((inner * math.cos(sec.end), inner * math.sin(sec.end)))
+    assert flat(edge_out.start) == flat((inner * math.cos(sec.start), inner * math.sin(sec.start)))
+    assert flat(edge_out.end) == flat((rf * math.cos(sec.start), rf * math.sin(sec.start)))
     if p.bore:
         assert moved.segments[-2] == plain.segments[-2]   # the bore arc is identical
 

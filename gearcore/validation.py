@@ -40,6 +40,8 @@ def _range_issues(p: GearParams):
          'Max profile deviation must be between 0.0001 and 0.1 mm.'),
         ('VAL-10', p.thickness > 0, 'Thickness must be greater than 0.'),
         ('IN-14', p.bore >= 0, 'Bore diameter must not be negative.'),
+        ('IN-31', abs(p.extra_teeth - round(p.extra_teeth)) < 1e-9,
+         'Extra teeth must be a whole number.'),
     )
     return [Issue(cid, ERROR, msg) for cid, ok, msg in checks if not ok]
 

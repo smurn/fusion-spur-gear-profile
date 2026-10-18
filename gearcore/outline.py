@@ -8,7 +8,7 @@ import math
 import typing
 
 from . import spline as spline_mod
-from .derived import tooth_axes
+from .derived import sector
 from .params import GearError, GearParams
 from .profile import ToothProfile
 from .spline import Point, Spline
@@ -169,29 +169,30 @@ def gear_outline(p: GearParams) -> Outline:
     def root_arc(start: float, end: float) -> list:                     # GEO-3
         return [Arc(ORIGIN, rf, start, end - start)] if end - start > 1e-12 else []
 
-    axes = tooth_axes(p)                                                # GEO-9
+    sec = sector(p)                                                     # GEO-9, GEO-13
+    axes = sec.axes
     segments = []
-    if p.arc_span is None:
+    if sec.start is None:
         for axis in axes:
             segments += tooth_segments(axis)
             segments += root_arc(axis + root_ang, axis + tooth.tau - root_ang)
         holes = (Circle(ORIGIN, bore),) if bore > 0 else ()             # GEO-11
         return Outline(tuple(segments), len(axes), holes)
 
-    # Arc mode (GEO-10): root circle from one end of the arc to the other, with the
-    # teeth that fit, closed by two radial edges and the bore circle or the center.
+    # Arc mode (GEO-10): root circle from one end of the sector to the other, with
+    # the teeth, closed by two radial edges and the bore circle or the center.
     # The print offset moves the root circle but not the edges or the bore (GEO-7).
-    half = p.arc_span / 2
-    at = -half
+    start, end = sec.start, sec.end
+    at = start
     for axis in axes:
         segments += root_arc(at, axis - root_ang)
         segments += tooth_segments(axis)
         at = axis + root_ang
-    segments += root_arc(at, half)
+    segments += root_arc(at, end)
     if bore > 0:
-        segments += [Line(_polar(rf, half), _polar(bore, half)),
-                     Arc(ORIGIN, bore, half, -p.arc_span),
-                     Line(_polar(bore, -half), _polar(rf, -half))]
+        segments += [Line(_polar(rf, end), _polar(bore, end)),
+                     Arc(ORIGIN, bore, end, start - end),
+                     Line(_polar(bore, start), _polar(rf, start))]
     else:
-        segments += [Line(_polar(rf, half), ORIGIN), Line(ORIGIN, _polar(rf, -half))]
+        segments += [Line(_polar(rf, end), ORIGIN), Line(ORIGIN, _polar(rf, start))]
     return Outline(tuple(segments), len(axes))

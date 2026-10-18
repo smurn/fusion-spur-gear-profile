@@ -6,6 +6,14 @@ import typing
 
 
 @dataclasses.dataclass(frozen=True)
+class Mate:
+    """A gear that meshes with an arc gear (TRN-12), in the gear's frame: the
+    direction from the gear's center to the mate's, and its layout radius in mm."""
+    direction: float
+    radius: float
+
+
+@dataclasses.dataclass(frozen=True)
 class GearParams:
     #: Diameter of the selected circle or arc, d_sel (IN-1).
     diameter: float
@@ -24,6 +32,12 @@ class GearParams:
     tolerance: float = 0.010                    # IN-11
     thickness: float = 5.0                      # IN-12, b
     bore: float = 0.0                           # IN-14, d_B
+    #: Arc mode: add the teeth the mates need at the ends of the motion (IN-30).
+    auto_teeth: bool = False
+    #: Arc mode: teeth added at each end, or removed if negative; whole (IN-31).
+    extra_teeth: float = 0
+    #: Arc mode: the gears it meshes with (TRN-12). None known: a rack is assumed (GEO-13).
+    mates: typing.Tuple[Mate, ...] = ()
 
 
 class GearError(ValueError):
