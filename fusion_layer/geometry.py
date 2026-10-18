@@ -99,18 +99,38 @@ def component_occurrence(component: adsk.fusion.Component):
                               'one is meant.'.format(component.name, occurrences.count))
 
 
-def to_assembly(frame: Frame, occurrence) -> Frame:
-    """The frame, given in its component's coordinates, in assembly coordinates:
-    moved by each occurrence's transform up the path to the root. Positions are
-    those at the current place in the timeline (FEA-13, SPIKE-7)."""
-    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
+def _up(points: list, vectors: list, occurrence):
+    """Copies of points and vectors given in the occurrence's component, in assembly
+    coordinates: moved by each occurrence's transform up the path to the root.
+    Positions are those at the current place in the timeline (FEA-13, SPIKE-7)."""
+    points, vectors = [p.copy() for p in points], [v.copy() for v in vectors]
     while occurrence is not None:
         transform = native(occurrence).transform2   # relative to the parent component
-        origin.transformBy(transform)
-        for axis in axes:
-            axis.transformBy(transform)
+        for item in points + vectors:
+            item.transformBy(transform)
         occurrence = getattr(occurrence, 'assemblyContext', None)
-    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
+    return points, vectors
+
+
+def _down(points: list, vectors: list, occurrence):
+    """The reverse of _up: from assembly coordinates into the occurrence's component."""
+    path = []
+    while occurrence is not None:
+        path.append(occurrence)
+        occurrence = getattr(occurrence, 'assemblyContext', None)
+    points, vectors = [p.copy() for p in points], [v.copy() for v in vectors]
+    for step in reversed(path):   # from the top level down
+        inverse = native(step).transform2.copy()
+        inverse.invert()
+        for item in points + vectors:
+            item.transformBy(inverse)
+    return points, vectors
+
+
+def to_assembly(frame: Frame, occurrence) -> Frame:
+    """The frame, given in its component's coordinates, in assembly coordinates."""
+    (origin,), (x, y, normal) = _up([frame.origin], [frame.x, frame.y, frame.normal], occurrence)
+    return dataclasses.replace(frame, origin=origin, x=x, y=y, normal=normal)
 
 
 def angle_in(frame: Frame, other: Frame, angle: float) -> float:
@@ -123,18 +143,8 @@ def angle_in(frame: Frame, other: Frame, angle: float) -> float:
 def from_assembly(frame: Frame, occurrence) -> Frame:
     """The reverse of to_assembly: a frame in assembly coordinates, in the
     coordinates of the occurrence's component."""
-    path = []
-    while occurrence is not None:
-        path.append(occurrence)
-        occurrence = getattr(occurrence, 'assemblyContext', None)
-    origin, axes = frame.origin.copy(), [frame.x.copy(), frame.y.copy(), frame.normal.copy()]
-    for step in reversed(path):   # from the top level down
-        inverse = native(step).transform2.copy()
-        inverse.invert()
-        origin.transformBy(inverse)
-        for axis in axes:
-            axis.transformBy(inverse)
-    return dataclasses.replace(frame, origin=origin, x=axes[0], y=axes[1], normal=axes[2])
+    (origin,), (x, y, normal) = _down([frame.origin], [frame.x, frame.y, frame.normal], occurrence)
+    return dataclasses.replace(frame, origin=origin, x=x, y=y, normal=normal)
 
 
 def frame_in(curve, component: adsk.fusion.Component, occurrence) -> Frame:
@@ -146,6 +156,65 @@ def frame_in(curve, component: adsk.fusion.Component, occurrence) -> Frame:
     if own == component:
         return frame
     return from_assembly(to_assembly(frame, occurrence_of(curve, own)), occurrence)
+
+
+class StartObjectError(gearcore.GearError):
+    """The start object cannot be used (VAL-26)."""
+
+
+def _start_geometry(entity):
+    """Point, normal (None for a point) and component of a start object (IN-20),
+    in that component's coordinates. None if the entity is no start object."""
+    face = adsk.fusion.BRepFace.cast(entity)
+    if face:
+        plane = adsk.core.Plane.cast(face.geometry)
+        return (plane.origin, plane.normal, face.body.parentComponent) if plane else None
+    construction_plane = adsk.fusion.ConstructionPlane.cast(entity)
+    if construction_plane:
+        plane = construction_plane.geometry
+        return plane.origin, plane.normal, construction_plane.component
+    vertex = adsk.fusion.BRepVertex.cast(entity)
+    if vertex:
+        return vertex.geometry, None, vertex.body.parentComponent
+    sketch_point = adsk.fusion.SketchPoint.cast(entity)
+    if sketch_point:
+        sketch = sketch_point.parentSketch
+        return sketch.sketchToModelSpace(sketch_point.geometry), None, sketch.parentComponent
+    construction_point = adsk.fusion.ConstructionPoint.cast(entity)
+    if construction_point:
+        return construction_point.geometry, None, construction_point.component
+    return None
+
+
+def is_start_object(entity) -> bool:
+    """A planar face, construction plane, vertex, sketch point or construction point."""
+    return entity is not None and _start_geometry(native(entity)) is not None
+
+
+def start_distance(entity, frame: Frame, component: adsk.fusion.Component, occurrence) -> float:
+    """GEO-12: the distance, in cm along the frame's normal, from the frame's plane
+    to the start object's plane or point. frame is in the coordinates of the
+    gear's component; occurrence is the gear component's. Raises StartObjectError
+    for a plane that is not parallel."""
+    found = _start_geometry(native(entity))
+    if found is None:
+        raise StartObjectError('The start object must be a planar face, a construction plane or '
+                               'a point.')
+    point, normal, own = found
+    if own != component:
+        points, vectors = _up([point], [normal] if normal else [], occurrence_of(entity, own))
+        points, vectors = _down(points, vectors, occurrence)
+        point, normal = points[0], (vectors[0] if vectors else None)
+    if normal is not None and normal.crossProduct(frame.normal).length > 1e-6:
+        raise StartObjectError('The start plane must be parallel to the sketch plane.')
+    return frame.origin.vectorTo(point).dotProduct(frame.normal)
+
+
+def shifted(frame: Frame, distance: float) -> Frame:
+    """The frame moved along its normal by distance (cm), for the start plane (GEO-12)."""
+    o, n = frame.origin, frame.normal
+    origin = adsk.core.Point3D.create(o.x + n.x * distance, o.y + n.y * distance, o.z + n.z * distance)
+    return dataclasses.replace(frame, origin=origin)
 
 
 def source_bodies(base: adsk.fusion.BaseFeature) -> list:

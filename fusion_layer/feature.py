@@ -26,6 +26,7 @@ WORKSPACE_ID = 'FusionSolidEnvironment'
 PANEL_ID = 'SolidCreatePanel'
 
 NEW_BODY, JOIN = 'New Body', 'Join'
+PROFILE_PLANE, OFFSET, OBJECT = 'Profile Plane', 'Offset', 'Object'   # IN-18
 NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or move the curve '
                    'onto a body.')
 
@@ -33,6 +34,7 @@ NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or 
 #: They are dialog inputs and feature parameters (FEA-5). Never change the ids.
 PARAMS = (
     ('module', 'Module', 'length', '1 mm'),
+    ('start_offset', 'Start offset', 'length', '0 mm'),
     ('thickness', 'Thickness', 'length', '5 mm'),
     ('bore', 'Bore diameter', 'length', '0 mm'),
     ('rotation', 'Start rotation (% of pitch)', 'number', '0'),
@@ -87,6 +89,20 @@ def to_gear_params(frame: geometry.Frame, values: dict) -> gearcore.GearParams:
         tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'))
 
 
+def parameter_value(feature: adsk.fusion.CustomFeature, pid: str, kind: str, default: str) -> float:
+    """A feature parameter's value. Fusion cannot add a parameter to an existing
+    feature, so a gear created before the parameter existed gets its default (FEA-5)."""
+    parameter = feature.parameters.itemById(pid)
+    if parameter is None:
+        return design().unitsManager.evaluateExpression(default, unit(kind))
+    return parameter.value
+
+
+def named_value(feature: adsk.fusion.CustomFeature, value_id: str, default: str) -> str:
+    values = feature.customNamedValues
+    return values.value(value_id) if values.isExistingValue(value_id) else default
+
+
 def base_feature(feature: adsk.fusion.CustomFeature) -> adsk.fusion.BaseFeature:
     """The base feature that holds the gear body."""
     return next(f for f in feature.features
@@ -105,6 +121,8 @@ class Settings:
     flip: bool
     expressions: dict
     values: dict
+    start: str = PROFILE_PLANE   # IN-18
+    start_object: typing.Any = None
 
 
 @dataclasses.dataclass
@@ -134,9 +152,10 @@ def feature_occurrence(feature: adsk.fusion.CustomFeature):
         return None
 
 
-def evaluate(curve, values: dict, target) -> Evaluation:
+def evaluate(curve, values: dict, target, start: str = PROFILE_PLANE, start_object=None) -> Evaluation:
     """Run the gear math for a curve and parameter values. target is the gear's
-    component and the occurrence of it (FEA-14). Never raises for bad input."""
+    component and the occurrence of it (FEA-14); start and start_object are IN-18
+    and IN-20. Never raises for bad input."""
     ev = Evaluation()
     if not geometry.is_gear_curve(geometry.native(curve) if curve else None):
         ev.issues.append(gearcore.Issue('VAL-1', gearcore.ERROR, 'Select a sketch circle or arc.'))
@@ -146,6 +165,21 @@ def evaluate(curve, values: dict, target) -> Evaluation:
     except geometry.AmbiguousOccurrence as e:
         ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
         return ev
+    if start != PROFILE_PLANE:   # GEO-12: move to the start plane
+        distance = values.get('start_offset', 0.0)
+        if start == OBJECT:
+            if start_object is None or not start_object.isValid:
+                ev.issues.append(gearcore.Issue('VAL-25', gearcore.ERROR, 'Select the start object.'))
+                return ev
+            try:
+                distance += geometry.start_distance(start_object, ev.frame, *target)
+            except geometry.AmbiguousOccurrence as e:
+                ev.issues.append(gearcore.Issue('VAL-24', gearcore.ERROR, str(e)))
+                return ev
+            except geometry.StartObjectError as e:
+                ev.issues.append(gearcore.Issue('VAL-26', gearcore.ERROR, str(e)))
+                return ev
+        ev.frame = geometry.shifted(ev.frame, distance)
     ev.params = to_gear_params(ev.frame, values)
     ev.issues = gearcore.validate(ev.params)
     if not any(i.severity == gearcore.ERROR for i in ev.issues):
@@ -280,6 +314,8 @@ class SpurGearFeature:
             flip = self._last_used.get('flip', False)
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
+        start = named_value(feature, 'start', PROFILE_PLANE) if feature else \
+            self._last_used.get('start', PROFILE_PLANE)
 
         # The common inputs first, the rarely changed ones in a group that is only
         # open if one of them is not at its default (UI-8).
@@ -288,7 +324,23 @@ class SpurGearFeature:
             if pid in ADVANCED:
                 advanced.append((pid, label, kind, default))
                 continue
-            inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
+            if pid == 'start_offset':   # UI-10: Start comes right before Thickness
+                choice = inputs.addDropDownCommandInput(
+                    'start', 'Start', adsk.core.DropDownStyles.TextListDropDownStyle)
+                for name in (PROFILE_PLANE, OFFSET, OBJECT):
+                    choice.listItems.add(name, name == start)
+            value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
+            if pid == 'start_offset':
+                if feature and feature.parameters.itemById(pid) is None:
+                    value_input.isEnabled = False   # FEA-5
+                    value_input.tooltip = ('This gear was made before the start offset existed. '
+                                           'Create it again to use one.')
+                start_object = inputs.addSelectionInput(
+                    'start_object', 'Start object', 'Select a planar face, construction plane or point')
+                for name in ('PlanarFaces', 'ConstructionPlanes', 'Vertices', 'SketchPoints',
+                             'ConstructionPoints'):
+                    start_object.addSelectionFilter(name)
+                start_object.setSelectionLimits(0, 1)
             if pid == 'bore':
                 inputs.addBoolValueInput('flip', 'Flip side', True, '', flip)
         group = inputs.addGroupCommandInput('advanced', 'Advanced')
@@ -322,6 +374,8 @@ class SpurGearFeature:
         by_string = adsk.core.ValueInput.createByString
         if self._editing:
             parameter = self._editing.parameters.itemById(pid)
+            if parameter is None:   # FEA-5: made before this parameter existed
+                return by_string(default), False
             return by_string(parameter.expression), abs(parameter.value - standard) > 1e-9
         if pid in self._last_used.get('params', {}):
             expression, value = self._last_used['params'][pid]
@@ -351,7 +405,14 @@ class SpurGearFeature:
         operation = adsk.core.DropDownCommandInput.cast(inputs.itemById('operation')).selectedItem.name
         curve = curve_input.selection(0).entity if curve_input.selectionCount else None
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
-        return Settings(curve, operation, flip, expressions, values)
+        start = adsk.core.DropDownCommandInput.cast(inputs.itemById('start')).selectedItem.name
+        object_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('start_object'))
+        start_object = object_input.selection(0).entity if object_input.selectionCount else None
+        return Settings(curve, operation, flip, expressions, values, start, start_object)
+
+    def _evaluate(self, settings: Settings) -> Evaluation:
+        return evaluate(settings.curve, settings.values, self._target(), settings.start,
+                        settings.start_object)
 
     def _join_problem(self, settings: Settings, ev: Evaluation) -> str:
         """VAL-12, checked without building the gear: if not even a cylinder of the
@@ -381,11 +442,14 @@ class SpurGearFeature:
         settings = self._read(inputs)
         text = 'Enter valid values.'
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values, self._target())
+            ev = self._evaluate(settings)
             text = info_text(ev)
             note = note or self._join_problem(settings, ev)
             # UI-9: the layout sketch sets the rotation; the start rotation is not used.
             find_input(inputs, 'rotation').isEnabled = not oriented_by_layout(ev)
+            # UI-10: show only what the chosen start needs.
+            find_input(inputs, 'start_offset').isVisible = settings.start != PROFILE_PLANE
+            inputs.itemById('start_object').isVisible = settings.start == OBJECT
         if note:
             text += '<br/><b>Error:</b> ' + note
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
@@ -397,12 +461,14 @@ class SpurGearFeature:
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
         if args.activeInput.id == 'curve':
             args.isSelectable = geometry.is_gear_curve(geometry.native(args.selection.entity))
+        elif args.activeInput.id == 'start_object':
+            args.isSelectable = geometry.is_start_object(args.selection.entity)
 
     def _on_validate(self, args: adsk.core.ValidateInputsEventArgs):
         settings = self._read(args.inputs)
         valid = False
         if settings is not None:
-            ev = evaluate(settings.curve, settings.values, self._target())
+            ev = self._evaluate(settings)
             valid = ev.outline is not None and not self._join_problem(settings, ev)
         args.areInputsValid = valid   # UI-5
 
@@ -413,12 +479,13 @@ class SpurGearFeature:
         the whole edit (rollTo plus beginStep, or Command.editingFeature, which is
         not always accepted) hid the gear and gave Undo an extra step that only
         moved the timeline marker. _apply_edit rolls it back just for the change."""
-        dependency = self._editing.dependencies.itemById('curve')
-        if dependency and dependency.entity:
-            selection = adsk.core.SelectionCommandInput.cast(
-                args.command.commandInputs.itemById('curve'))
-            if not selection.addSelection(dependency.entity):
-                log('could not select the curve of ' + self._editing.name)
+        for dep_id in ('curve', 'start_object'):
+            dependency = self._editing.dependencies.itemById(dep_id)
+            if dependency and dependency.entity:
+                selection = adsk.core.SelectionCommandInput.cast(
+                    args.command.commandInputs.itemById(dep_id))
+                if not selection.addSelection(dependency.entity):
+                    log('could not select the {} of {}'.format(dep_id, self._editing.name))
 
     def _on_destroy(self, args: adsk.core.CommandEventArgs):
         self._command = None
@@ -452,7 +519,7 @@ class SpurGearFeature:
                 self._apply_edit(self._editing, settings)
             elif self._create(settings):
                 self._last_used = {
-                    'operation': settings.operation, 'flip': settings.flip,
+                    'operation': settings.operation, 'flip': settings.flip, 'start': settings.start,
                     'params': {pid: (settings.expressions[pid], settings.values[pid])
                                for pid, _, _, _ in PARAMS}}
         except NothingToJoin as e:
@@ -461,7 +528,8 @@ class SpurGearFeature:
     # --------------------------------------------------------------- feature --
     def _create(self, settings: Settings) -> typing.Optional[adsk.fusion.CustomFeature]:
         component, occurrence = self._target()
-        ev = evaluate(settings.curve, settings.values, (component, occurrence))
+        ev = evaluate(settings.curve, settings.values, (component, occurrence), settings.start,
+                      settings.start_object)
         if ev.outline is None:
             return None
         features = component.features
@@ -490,7 +558,8 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
         feature.customNamedValues.addOrSetValue('operation', settings.operation)
         feature.customNamedValues.addOrSetValue('occurrence', occurrence.entityToken if occurrence else '')
-        self._set_dependencies(feature, settings.curve, ev.train)
+        feature.customNamedValues.addOrSetValue('start', settings.start)
+        self._set_dependencies(feature, settings.curve, ev.train, self._start_object(settings))
         return feature
 
     @staticmethod
@@ -539,16 +608,23 @@ class SpurGearFeature:
         feature.customNamedValues.addOrSetValue('operation', operation)
 
     @staticmethod
+    def _start_object(settings: Settings):
+        return settings.start_object if settings.start == OBJECT else None
+
+    @staticmethod
     def _set_dependencies(feature: adsk.fusion.CustomFeature, curve,
-                          train: typing.Optional[layout.Train]):
-        """Point the feature at its curve (FEA-2) and its layout sketch (FEA-12). A
-        dependency can only refer to the design as it was before the feature."""
+                          train: typing.Optional[layout.Train], start_object=None):
+        """Point the feature at its curve and start object (FEA-2) and its layout
+        sketch (FEA-12). A dependency can only refer to the design as it was before
+        the feature."""
         timeline = design().timeline
         position = timeline.markerPosition
         resume_at = timeline.item(position - 1) if position > 0 else None
         feature.timelineObject.rollTo(True)
         try:
             wanted = {'curve': curve}
+            if start_object is not None:
+                wanted['start_object'] = start_object
             for dep_id, entity in wanted.items():
                 # Inside a component, Fusion rejected the native entity ("Invalid
                 # argument entity"). Try the entity as it was selected, then the
@@ -580,6 +656,7 @@ class SpurGearFeature:
                     raise error
             # 'mate' is left over from the unreleased Mesh with version.
             stale = ['mate'] + (['layout'] if train is None or train.own_sketch else [])
+            stale += [] if start_object is not None else ['start_object']
             for dep_id in stale:
                 existing = feature.dependencies.itemById(dep_id)
                 if existing:
@@ -612,10 +689,13 @@ class SpurGearFeature:
         feature.timelineObject.rollTo(True)
         try:
             for pid, _, _, _ in PARAMS:
-                feature.parameters.itemById(pid).expression = settings.expressions[pid]
+                parameter = feature.parameters.itemById(pid)
+                if parameter is not None:   # FEA-5: missing on gears made before it existed
+                    parameter.expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
-            self._set_dependencies(feature, settings.curve,
-                                   evaluate(settings.curve, settings.values, self._target()).train)
+            feature.customNamedValues.addOrSetValue('start', settings.start)
+            self._set_dependencies(feature, settings.curve, self._evaluate(settings).train,
+                                   self._start_object(settings))
             self._recompute(feature)
             if settings.operation != feature.customNamedValues.value('operation'):
                 self._change_operation(feature, settings.operation)
@@ -629,8 +709,12 @@ class SpurGearFeature:
         curve = dependency.entity if dependency else None
         if curve is None or not curve.isValid:
             raise gearcore.GearError('The curve of {} no longer exists.'.format(feature.name))
-        values = {pid: feature.parameters.itemById(pid).value for pid, _, _, _ in PARAMS}
-        ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)))
+        values = {pid: parameter_value(feature, pid, kind, default) for pid, _, kind, default in PARAMS}
+        start = named_value(feature, 'start', PROFILE_PLANE)
+        dependency = feature.dependencies.itemById('start_object')
+        start_object = dependency.entity if dependency else None
+        ev = evaluate(curve, values, (feature.parentComponent, feature_occurrence(feature)), start,
+                      start_object)
         if ev.outline is None:
             raise gearcore.GearError('; '.join(
                 i.message for i in ev.issues if i.severity == gearcore.ERROR))
