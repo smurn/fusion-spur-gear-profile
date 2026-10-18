@@ -97,6 +97,10 @@ class NothingToJoin(gearcore.GearError):
     """Operation is Join and the gear touches no body (VAL-12)."""
 
 
+class MateRefused(gearcore.GearError):
+    """Fusion refused the dependency on the gear to mesh with (VAL-15)."""
+
+
 def has_errors(issues: list) -> bool:
     return any(i.severity == gearcore.ERROR for i in issues)
 
@@ -138,17 +142,32 @@ _logged = set()
 
 def timeline_index(feature: adsk.fusion.CustomFeature) -> typing.Optional[int]:
     """The feature's position in the timeline, or None where Fusion does not give
-    it. Reading it raised "this is not a parametric design" while a gear was
-    edited and its mate picked in the timeline; the details go to the log once."""
-    error = None
-    for candidate in (geometry.native(feature), feature):
+    it. In a hybrid design, reading timelineObject inside the dialog raised "this
+    is not a parametric design", for any gear; then the timeline is searched. The
+    details go to the log once."""
+    native = geometry.native(feature)
+    errors = []
+    for candidate in (native, feature):
         try:
             return candidate.timelineObject.index
         except RuntimeError as e:
-            error = e
-    message = 'no timeline position for {}: {} (design type {}, proxy: {}, component: {})'.format(
-        feature.name, str(error).strip(), design().designType,
-        getattr(feature, 'assemblyContext', None) is not None, feature.parentComponent.name)
+            errors.append(str(e).strip())
+    count = None
+    try:
+        timeline = design().timeline
+        count = timeline.count
+        for i in range(count):
+            entity = timeline.item(i).entity
+            if entity is not None and entity == native:
+                return i
+    except RuntimeError as e:
+        errors.append('timeline search: ' + str(e).strip())
+    product = app.activeProduct
+    message = ('no timeline position for {}: {} (active product {}, design type {}, intent {}, '
+               'timeline items {}, component {})').format(
+        feature.name, '; '.join(errors), product.objectType if product else None,
+        design().designType, getattr(design(), 'designIntent', '?'), count,
+        feature.parentComponent.name)
     if message not in _logged:
         _logged.add(message)
         log(message)
@@ -650,7 +669,7 @@ class SpurGearFeature:
                     self._apply_edit(self._editing, settings)
                 else:
                     self._create(settings)
-            except NothingToJoin as e:
+            except (NothingToJoin, MateRefused) as e:
                 # VAL-12 can only be checked with the gear body in hand.
                 self._update_dialog(args.command.commandInputs, str(e))
             # Without this the preview stays invisible after the inputs were
@@ -669,7 +688,7 @@ class SpurGearFeature:
                     'operation': settings.operation, 'flip': settings.flip,
                     'params': {pid: (settings.expressions[pid], settings.values[pid])
                                for pid, _, _, _ in PARAMS}}
-        except NothingToJoin as e:
+        except (NothingToJoin, MateRefused) as e:
             ui.messageBox(str(e), NAME)
 
     # --------------------------------------------------------------- feature --
@@ -796,6 +815,12 @@ class SpurGearFeature:
                         break
                     except RuntimeError as e:
                         error = e
+                if error is not None and dep_id == 'mate':
+                    # Expected when the mate comes later in the timeline, which the
+                    # dialog cannot always check (timeline_index).
+                    log('mate dependency refused: {}'.format(error))
+                    raise MateRefused('The gear to mesh with must come before this gear in the '
+                                      'timeline.')
                 if error is not None:
                     raise error
         finally:
