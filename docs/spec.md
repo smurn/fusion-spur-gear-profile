@@ -1,7 +1,9 @@
 # Spur Gear: Specification
 
-Status: **Version 0.9** (2026-10-18). It describes the add-in as implemented in version
-0.10.0. New since version 0.8: gear trains oriented from a layout sketch (§7), gears created
+Status: **Version 0.10** (2026-10-18). It describes the add-in as implemented in version
+0.11.0. New since version 0.9: an arc is the gear's rim at its starting position, and the
+teeth its mates need at the ends of its motion are added (GEO-13, IN-30, IN-31, D-37). Since
+version 0.8: gear trains oriented from a layout sketch (§7), gears created
 in the active component (FEA-14), start, direction and extent options like Extrude's
 (IN-18 to IN-29), with icons and dark-theme icons (UI-11, UI-12). Checked by hand so far:
 gears from a layout sketch in several components, moving circles in the layout sketch, the
@@ -18,7 +20,7 @@ Draft 0.9 first linked each gear to the gear it meshes with ("Mesh with", SPIKE-
 SPIKE-7). That tied the gears' order in the timeline to the chain, so it was replaced by a
 layout sketch (SPIKE-8). The "Mesh with" version is tagged `mesh-with-live-link` in git.
 Version 0.9 adds the start, direction and extent options and creating gears in the active
-component.
+component. Version 0.10 changes what an arc means (D-37).
 Retired IDs: SKT-1 to SKT-12, IN-13 (flip side, replaced by negative distances, D-36), IN-16,
 IN-17, VAL-9, VAL-15 to VAL-19, DER-10, DER-11, FEA-15,
 D-1, D-4, D-6, D-17, D-22 to D-26, CHK-7, CHK-8, SPIKE-1 to SPIKE-4. VAL-13 was never used.
@@ -117,6 +119,8 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-27 | Measurement | Whole Length | With Symmetric: Whole Length (the distance is the face width) or Half Length (the distance goes each way from the start) |
 | IN-28 | Extent offset | 0 mm | any; with To Object for side 1. Positive moves the end past the object, away from the start |
 | IN-29 | Extent offset, side 2 | 0 mm | any; as IN-28, for side 2 |
+| IN-30 | Automatic extra teeth | on | Arcs only: add the teeth the mates need at the ends of the motion (GEO-13) |
+| IN-31 | Extra teeth | 0 | Arcs only. A whole number, also negative: teeth added at each end, on top of IN-30 (GEO-13) |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -144,8 +148,11 @@ tooth thickness and the tip thickness. Undercut is reported through VAL-8.
   with d_a and α_a of the offset tip circle. With a positive offset the tip arc keeps its
   angle and only moves out (GEO-7), so s_a is the value without offset times d_a / (d_a − 2δ).
   s_a is undefined if the tip circle lies inside the base circle (VAL-3).
-- **DER-9** Number of teeth that are generated (see GEO-9). For a circle this is z. The
-  dialog shows it for arcs.
+- **DER-9** Number of teeth that are generated. For a circle this is z, for an arc see
+  GEO-13. The dialog shows it for arcs.
+- **DER-12** Range of motion of an arc gear: how far it turns before the touching point of a
+  mate reaches an end of the arc. That is the arc's angle minus the angle between the two
+  outermost mates; without mates, the arc's angle (GEO-13). The dialog shows it for arcs.
 
 ## 6. Geometry
 
@@ -180,16 +187,39 @@ it a solid.
 - **GEO-9** Tooth placement: tooth k's axis is at angle θ₀ + k·τ, with θ₀ = θ_ref + p·τ, or
   with θ₀ from TRN-10 when the gear's orientation comes from its layout sketch.
   - Circle: θ_ref is the X axis of the selected curve's sketch; all z teeth are generated.
-  - Arc: θ_ref is the direction from the center to the arc's midpoint. Only teeth whose full
-    pitch unit (axis ± τ/2) lies within the arc are generated. With p = 0 and no orientation
-    from the layout sketch the sector is symmetric about the arc midpoint.
+  - Arc: θ_ref is the direction from the center to the arc's midpoint. Which teeth are
+    generated is given by GEO-13. With p = 0, no orientation from the layout sketch and no
+    mates, the teeth are symmetric about the arc midpoint.
 - **GEO-10** Arc mode: the root circle continues from the outermost generated teeth to the
-  arc's end angles. From there the outline is closed by two straight radial edges. They run
+  ends of the sector. Each end is the arc's end or the outer edge of the outermost tooth's
+  pitch unit (axis ± τ/2), whichever is further out. From there the outline is closed by two
+  straight radial edges. They run
   to the bore circle, which closes the outline with an arc, or to the center if there is no
   bore.
 - **GEO-11** Bore: a circular hole of diameter d_B, concentric with the selected curve,
   through the full thickness. In arc mode only the part of the bore circle inside the sector
   is used (GEO-10).
+- **GEO-13** Arc mode teeth. The arc is the gear's rim at its starting position (D-37). Its
+  mates are the layout circles that touch it (TRN-12). The gear turns until the touching point
+  of a mate reaches an end of the arc (DER-12); at that point the teeth must still mesh as
+  they would on a full gear. Angles are in the gear's plane: the arc runs counter-clockwise
+  from S to E, and β_i is the direction from the gear's center to mate i's.
+  - Overlap angle γ_i: the angle, seen from the gear's center, over which the tip circles of
+    the gear and of mate i overlap: cos γ_i = (a² + r_a² − r_ai²) / (2·a·r_a). r_a is the
+    gear's tip radius (DER-4), a the sum of the two layout radii, and r_ai = r_i + h_a\*·m
+    the mate's: its layout radius plus this gear's addendum, as the mates are assumed to
+    have this gear's module (TRN-9) and addendum and no profile shift. Without mates, a rack
+    is assumed, the largest mate there is: cos γ = (r − h_a\*·m) / r_a, with r the radius
+    of the selected curve.
+  - Reach at the start, with Automatic extra teeth (IN-30): the largest γ_i − (β_i − β_s)
+    over the mates, with β_s the mate nearest S and angles measured from S. When the gear
+    has turned until that mate is at S, the others are β_i − β_s further in. At the end the
+    same from E, with the mate nearest E. Without mates, γ at both ends. Without IN-30, 0.
+  - Teeth: every tooth whose pitch unit (axis ± τ/2) overlaps the arc extended by the
+    reach at each end, plus IN-31 teeth at each end, or fewer if IN-31 is negative. The
+    tooth axes are those of GEO-9.
+  - If that makes z teeth or more, or the sector of GEO-10 would cover the whole circle, the
+    gear is a full gear: all z teeth, no radial edges and the full bore.
 - **GEO-12** The solid is the outline extruded perpendicular to the plane of the selected
   curve, between two planes parallel to it. Heights are measured along the sketch normal.
   The start plane (IN-18) is at height s:
@@ -261,6 +291,10 @@ other (D-27).
 - **TRN-11** Near miss. Two layout circles that do not touch but whose distance differs from
   touching by no more than 0.25·m are reported (VAL-23): usually a missing tangent
   constraint.
+- **TRN-12** Mates of an arc gear. The layout circles that touch the gear's layout circle
+  (TRN-3) are its mates (GEO-13). Their directions are converted into the gear's plane like
+  the tooth axis (TRN-10). A mate whose touching point is not on the gear's own arc is not
+  counted. A gear that is not in a train has no mates.
 
 ## 8. Feature behavior
 
@@ -325,7 +359,8 @@ other (D-27).
   a message: see VAL-12.
 - **UI-6** Creating a gear is a single undo step. So is each edit.
 - **UI-7** The create dialog starts with the inputs of the last gear that was created: the
-  numeric inputs (as entered, so references to user parameters are kept) and the operation.
+  numeric inputs (as entered, so references to user parameters are kept), the operation and
+  Automatic extra teeth (IN-30).
   The extrusion settings are not remembered; a new gear always starts with Profile Plane,
   One Side, Distance, Whole Length, and the defaults of the start offset, the side 2 distance
   and the To Object offsets (IN-18 to IN-29 except IN-20, IN-23 and IN-26, which are objects).
@@ -354,6 +389,9 @@ other (D-27).
   Extent objects behave like the start object when a gear is edited (UI-10). The info box
   shows the resulting face width.
 - **UI-12** All icons have versions for Fusion's dark theme.
+- **UI-13** Automatic extra teeth (IN-30), a checkbox, and Extra teeth (IN-31) follow the
+  start rotation. They are shown for arcs only. For an arc the info box shows how many of the
+  z teeth are generated (DER-9) and the range of motion (DER-12).
 
 ## 10. Validation
 
@@ -462,6 +500,20 @@ Resolved on 2026-10-18, after SPIKE-8:
   keeps its shape: its flip is honored when it recomputes, and its edit dialog shows its
   distances negated and clears the flip on OK.
 
+Resolved on 2026-10-18:
+
+- **D-37** An arc is the gear's rim at its starting position, not its outline. A gear that
+  turns only part of the way needs more teeth than its motion covers, so that it still meshes
+  fully at the ends of the motion; how many depends on the tooth count, the mates and the
+  orientation, and was hard to work out by hand. The add-in now adds them (GEO-13). One arc
+  serves any number of mates. The overlap of the tip circles is a conservative rule: only
+  the teeth that meet the mate on the line of action carry load, which would usually need
+  about one tooth less at each end. It may be refined later. Gears made before this version
+  recompute with IN-30 off and IN-31 at 0. A tooth now needs only to overlap the arc, not to
+  lie within it, so they may get one more tooth at each end.
+- **D-38** The teeth run across the whole sector, also between mates. A gear with separate
+  toothed patches cannot be made from one arc.
+
 ## 13. Feasibility
 
 The spikes are done; results are in [spikes.md](spikes.md). The custom feature design was
@@ -507,7 +559,8 @@ change of the layout sketch reached every gear, created in any order.
 - **ARC-6** An edit rolls the timeline back to before the feature only while the change is
   applied, inside the command's own transaction (UI-6).
 - **ARC-7** The numeric inputs are custom feature parameters (FEA-5). Operation, start,
-  direction, extents and measurement are stored with the feature as named values, the start
+  direction, extents, measurement and Automatic extra teeth are stored with the feature as
+  named values, the start
   and extent objects as dependencies. Gears made before D-36 also have a flip named value.
 - **ARC-8** The train rules (TRN-2 to TRN-9, TRN-11) are `gearcore` functions on plain data:
   the layout circles, arcs and lines in the layout sketch's coordinates in, tooth axes and
@@ -527,7 +580,9 @@ change of the layout sketch reached every gear, created in any order.
   center distance where they mesh touching when there is no backlash (overlap no deeper than
   the IN-11 tolerance), and with a clearance of j_bn/2 on each flank when there is; the train
   rules: touching, arcs, start lines, several trains, circles on a common center, loops that
-  do and do not mesh, near misses.
+  do and do not mesh, near misses; arc teeth: the overlap angle against a hand calculation and
+  the rack limit, the reach with one and several mates, extra teeth, the full-gear fallback,
+  and that a mate at the end of the range of motion meets complete teeth.
 - **TST-3** The Fusion layer is verified with a manual checklist in `docs/manual-tests.md`
   that covers the FEA and UI requirements and the CHK items.
 
