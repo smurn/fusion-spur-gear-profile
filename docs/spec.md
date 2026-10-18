@@ -2,11 +2,11 @@
 
 Status: **Version 0.9** (2026-10-18). It describes the add-in as implemented in version
 0.10.0. New since version 0.8: gear trains oriented from a layout sketch (§7), gears created
-in the active component (FEA-14), and a start option like Extrude's (IN-18 to IN-20). Checked
-by hand so far: gears from a layout sketch in several components, moving circles in the
-layout sketch, the active component, and a joined gear starting on a face (CHK-9). The rest of
-the manual checklist for these features is still to be done. Not implemented yet: direction
-and extent like Extrude's (IN-21 to IN-26, the extent part of GEO-12, UI-11, VAL-27, D-33). Requirements have stable IDs
+in the active component (FEA-14), and start, direction and extent options like Extrude's
+(IN-18 to IN-26). Checked by hand so far: gears from a layout sketch in several components,
+moving circles in the layout sketch, the active component, a joined gear starting on a face
+(CHK-9), and direction and extent (manual checklist steps 75 to 83). The rest of the manual
+checklist for these features is still to be done. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
@@ -15,7 +15,8 @@ target body selection for Join. Draft 0.6 limited the print offset to the toothe
 Draft 0.9 first linked each gear to the gear it meshes with ("Mesh with", SPIKE-6 and
 SPIKE-7). That tied the gears' order in the timeline to the chain, so it was replaced by a
 layout sketch (SPIKE-8). The "Mesh with" version is tagged `mesh-with-live-link` in git.
-Version 0.9 adds the start option and creating gears in the active component.
+Version 0.9 adds the start, direction and extent options and creating gears in the active
+component.
 Retired IDs: SKT-1 to SKT-12, IN-16, IN-17, VAL-9, VAL-15 to VAL-19, DER-10, DER-11, FEA-15,
 D-1, D-4, D-6, D-17, D-22 to D-26, CHK-7, CHK-8, SPIKE-1 to SPIKE-4. VAL-13 was never used.
 FEA-12 to FEA-14, UI-9 and ARC-8 had other meanings in the "Mesh with" draft, which was never
