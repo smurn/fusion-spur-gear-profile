@@ -525,6 +525,11 @@ class SpurGearFeature:
         # made the gear disappear.
         settings = self._read(args.command.commandInputs)
         if settings is not None:
+            if settings.operation == JOIN and adsk.fusion.BRepFace.cast(self._start_object(settings)):
+                # Joining in the preview replaces the faces of the joined body, and Fusion
+                # then disables OK because the selected start face is no longer valid.
+                # The preview shows the gear as its own body; OK joins it (CHK-9).
+                settings = dataclasses.replace(settings, operation=NEW_BODY)
             try:
                 if self._editing:
                     self._apply_edit(self._editing, settings)
