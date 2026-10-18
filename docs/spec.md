@@ -3,10 +3,11 @@
 Status: **Version 0.9** (2026-10-18). It describes the add-in as implemented in version
 0.10.0. New since version 0.8: gear trains oriented from a layout sketch (§7), gears created
 in the active component (FEA-14), and start, direction and extent options like Extrude's
-(IN-18 to IN-26). Checked by hand so far: gears from a layout sketch in several components,
+(IN-18 to IN-29). Checked by hand so far: gears from a layout sketch in several components,
 moving circles in the layout sketch, the active component, a joined gear starting on a face
 (CHK-9), and direction and extent (manual checklist steps 75 to 83). The rest of the manual
-checklist for these features is still to be done. Requirements have stable IDs
+checklist for these features is still to be done. Not implemented yet: Symmetric's half
+and whole length (IN-27) and the To Object offsets (IN-28, IN-29), with D-34. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
@@ -112,6 +113,9 @@ when the curve moves or changes size, or a gear parameter is edited, the gear is
 | IN-24 | Thickness, side 2 | 5 mm | > 0; with Two Sides and a distance for side 2 |
 | IN-25 | Extent, side 2 | Distance | Distance or To Object, with Two Sides |
 | IN-26 | Extent object, side 2 | none | With Two Sides and To Object for side 2: as IN-20 |
+| IN-27 | Measurement | Whole Length | With Symmetric: Whole Length (the thickness is the face width) or Half Length (the thickness goes each way from the start) |
+| IN-28 | Extent offset | 0 mm | any; with To Object for side 1. Positive moves the end past the object, away from the start |
+| IN-29 | Extent offset, side 2 | 0 mm | any; as IN-28, for side 2 |
 
 Defaults for IN-3 to IN-6 are the ISO 53 type A basic rack. Length inputs use the document's
 units. Start rotation is entered as a number from 0 to 100.
@@ -196,10 +200,13 @@ it a solid.
   From there, by the direction (IN-21); "the way of side 1" is along the sketch normal, or
   against it with IN-13:
   - One Side: from s to the end of side 1: s plus the thickness (IN-12) the way of side 1, or,
-    with To Object (IN-22), the height of the extent object (IN-23), on whichever side it is.
-  - Symmetric: from s − b/2 to s + b/2, with the thickness as the whole face width b.
+    with To Object (IN-22), the height of the extent object (IN-23), on whichever side it is,
+    moved by the extent offset (IN-28) away from s. If the object is on the start plane, away
+    from s means the way of side 1.
+  - Symmetric: from s − t to s + t, with t half the thickness for Whole Length (IN-27), or the
+    whole thickness for Half Length.
   - Two Sides: side 1 as for One Side, and side 2 from s the other way, by its own thickness
-    (IN-24) or to its own object (IN-25, IN-26). The gear spans both.
+    (IN-24) or to its own object and offset (IN-25, IN-26, IN-29). The gear spans both.
 
   The face width b is the distance between the lowest and the highest of these planes
   (VAL-27).
@@ -264,10 +271,11 @@ other (D-27).
 - **FEA-3** The selected curve and its sketch are not modified.
 - **FEA-4** After every recompute the gear is centered on the selected curve's center, lies on
   its plane, and has the tooth count of DER-1 for the curve's current diameter.
-- **FEA-5** IN-2 to IN-12, IN-14, IN-19 and IN-24 are feature parameters. They appear in the
-  parameters dialog under the feature and accept expressions and user parameters. Fusion
-  cannot add a parameter to an existing feature, so a gear created before one of them existed
-  lacks it: before IN-19 it has no start offset, before IN-24 no distance for side 2. Such a
+- **FEA-5** IN-2 to IN-12, IN-14, IN-19, IN-24, IN-28 and IN-29 are feature parameters. They
+  appear in the parameters dialog under the feature and accept expressions and user
+  parameters. Fusion cannot add a parameter to an existing feature, so a gear created before
+  one of them existed lacks it: before IN-19 it has no start offset, before IN-24 no distance
+  for side 2, before IN-28 and IN-29 no To Object offsets. Such a
   gear still computes, with those inputs disabled in its dialog.
 - **FEA-6** New Body creates one new solid body. Join merges the gear into every visible solid
   body of the same component that it touches or overlaps, as Extrude does, and creates no
@@ -331,9 +339,11 @@ other (D-27).
   start object stays as it is unless another one is picked; the dialog does not show it
   selected, and the info box says it is kept. A face of a body the gear joins exists only
   before the join, so it cannot be selected at the end of the timeline (CHK-9).
-- **UI-11** Direction (IN-21) and, unless it is Symmetric, Flip side and Extent (IN-22) follow
-  the start inputs, then Thickness or the extent object. With Two Sides, Extent, Thickness and
-  the extent object of side 2 follow. Each input is shown only when it is used. Extent objects
+- **UI-11** Direction (IN-21) follows the start inputs; with Symmetric, Measurement (IN-27)
+  follows it as a row of two icon buttons, as in Extrude; otherwise Flip side and Extent
+  (IN-22). Then Thickness, or the extent object and its offset. With Two Sides, Extent,
+  Thickness, the extent object and the offset of side 2 follow. Each input is shown only when
+  it is used. Extent objects
   behave like the start object when a gear is edited (UI-10). The info box shows the face
   width when it differs from the thickness input.
 
@@ -430,9 +440,11 @@ Resolved on 2026-10-18, after SPIKE-8:
   Object. Only planes parallel to the sketch, and points, can be start objects: a gear on a
   tilted face makes no sense.
 - **D-33** Direction and extent as in Extrude: One Side, Two Sides and Symmetric; Distance and
-  To Object (IN-21 to IN-26). For Symmetric the thickness is the whole face width. To Object
-  goes to the object whichever side it is on. Planned later: Extrude's choice between half and
-  whole length for Symmetric, shown the way Extrude shows it, and an offset for To Object.
+  To Object (IN-21 to IN-26). To Object goes to the object whichever side it is on.
+- **D-34** Symmetric offers Extrude's Half Length and Whole Length, as icon buttons like
+  Extrude's; Whole Length is the default, so a gear's thickness stays its face width unless
+  chosen otherwise (IN-27). To Object has an offset per side, positive past the object, away
+  from the start (IN-28, IN-29).
 
 ## 13. Feasibility
 
