@@ -81,6 +81,9 @@ PARAMS = (
 )
 #: Inputs that are rarely changed. The dialog shows them in a collapsed group (UI-8).
 ADVANCED = ('pressure_angle', 'addendum', 'dedendum', 'fillet', 'tolerance')
+#: Extrusion values that a new gear does not take over from the last one (UI-7, D-35).
+#: The thickness is the gear's face width and is taken over.
+NOT_REMEMBERED = ('start_offset', 'extent_offset', 'thickness2', 'extent_offset2')
 
 app = adsk.core.Application.get()
 ui = app.userInterface
@@ -437,8 +440,8 @@ class SpurGearFeature:
         if feature:
             current, extent = feature.customNamedValues.value('operation'), stored_extent(feature)
         else:
-            current = self._last_used.get('operation', NEW_BODY)
-            extent = self._last_used.get('extent', Extent())
+            # A new gear starts with the default extrusion settings (UI-7, D-35).
+            current, extent = self._last_used.get('operation', NEW_BODY), Extent()
         for name in (NEW_BODY, JOIN):
             operation.listItems.add(name, name == current)
 
@@ -544,7 +547,7 @@ class SpurGearFeature:
             if parameter is None:   # FEA-5: made before this parameter existed
                 return by_string(default), False
             return by_string(parameter.expression), abs(parameter.value - standard) > 1e-9
-        if pid in self._last_used.get('params', {}):
+        if pid in self._last_used.get('params', {}) and pid not in NOT_REMEMBERED:
             expression, value = self._last_used['params'][pid]
             differs = abs(value - standard) > 1e-9
             # The expression may use a user parameter that this design does not have.
@@ -784,9 +787,8 @@ class SpurGearFeature:
             elif self._create(settings):
                 self._last_used = {
                     'operation': settings.operation,
-                    'extent': dataclasses.replace(settings.extent, objects={}),
                     'params': {pid: (settings.expressions[pid], settings.values[pid])
-                               for pid, _, _, _ in PARAMS}}
+                               for pid, _, _, _ in PARAMS if pid not in NOT_REMEMBERED}}
         except NothingToJoin as e:
             ui.messageBox(str(e), NAME)
 
