@@ -33,9 +33,29 @@ HALF_LENGTH, WHOLE_LENGTH = 'Half Length', 'Whole Length'             # IN-27
 #: Start and extent objects (IN-20, IN-23, IN-26): dialog input and dependency ids, labels.
 OBJECT_INPUTS = {'start_object': 'Start object', 'extent_object': 'Extent object',
                  'extent_object2': 'Extent object (side 2)'}
-#: The numeric input each object input follows in the dialog (UI-10, UI-11).
-OBJECT_AFTER = {'start_offset': 'start_object', 'thickness': 'extent_object',
-                'thickness2': 'extent_object2'}
+#: The inputs of one side's extent, by role (UI-11). Side 1 has two sets, as in
+#: Extrude: ungrouped for One Side and Symmetric, in the Side 1 group for Two Sides.
+#: Fusion cannot move an input into a group, so the dialog has both and carries the
+#: values across when the direction changes (_carry_side1).
+SIDE_SETS = {
+    'one': {'extent': 'extent', 'thickness': 'thickness', 'object': 'extent_object',
+            'offset': 'extent_offset'},
+    'side1': {'extent': 'side1_extent', 'thickness': 'side1_thickness',
+              'object': 'side1_extent_object', 'offset': 'side1_extent_offset'},
+    'side2': {'extent': 'extent2', 'thickness': 'thickness2', 'object': 'extent_object2',
+              'offset': 'extent_offset2'},
+}
+#: The feature parameters behind each set's thickness and offset (FEA-5).
+SET_PARAMS = {'one': ('thickness', 'extent_offset'), 'side1': ('thickness', 'extent_offset'),
+              'side2': ('thickness2', 'extent_offset2')}
+#: Selection input id: the start or extent object (dependency id) it picks.
+INPUT_OBJECT = {'start_object': 'start_object', 'extent_object': 'extent_object',
+                'side1_extent_object': 'extent_object', 'extent_object2': 'extent_object2'}
+#: Drop-down id: the selection input its object choice activates, and that choice (UI-11).
+CHOICE_OBJECT = {'start': ('start_object', OBJECT), 'extent': ('extent_object', TO_OBJECT),
+                 'side1_extent': ('side1_extent_object', TO_OBJECT),
+                 'extent2': ('extent_object2', TO_OBJECT)}
+GROUPS = ('advanced', 'side1', 'side2')
 NOTHING_TO_JOIN = ('The gear does not touch a body to join to. Use New Body, or move the curve '
                    'onto a body.')
 
@@ -75,10 +95,12 @@ def design() -> adsk.fusion.Design:
 
 
 def find_input(inputs: adsk.core.CommandInputs, input_id: str):
-    """A dialog input by id, whether it is at the top level or in the Advanced group."""
+    """A dialog input by id, at the top level or in one of the groups."""
     found = inputs.itemById(input_id)
-    if found is None:
-        group = adsk.core.GroupCommandInput.cast(inputs.itemById('advanced'))
+    for group_id in GROUPS:
+        if found is not None:
+            break
+        group = adsk.core.GroupCommandInput.cast(inputs.itemById(group_id))
         found = group.children.itemById(input_id) if group else None
     return found
 
@@ -402,6 +424,7 @@ class SpurGearFeature:
         self._known = {}
         self._changed = set()
         self._logged = set()
+        self._syncing = False   # set while the dialog changes its own inputs
         inputs = command.commandInputs
         feature = self._editing
 
@@ -426,11 +449,13 @@ class SpurGearFeature:
         for pid, label, kind, default in PARAMS:
             if pid in ADVANCED:
                 advanced.append((pid, label, kind, default))
-                continue
-            if pid == 'start_offset':
+            elif pid in ('thickness', 'extent_offset', 'thickness2', 'extent_offset2'):
+                continue   # in the side inputs, below
+            elif pid == 'start_offset':
                 self._add_choice(inputs, 'start', 'Start', 'start', (PROFILE_PLANE, OFFSET, OBJECT),
                                  extent.start)
-            elif pid == 'thickness':
+                self._add_value(inputs, pid, pid)
+                self._add_object(inputs, 'start_object', 'Start object')
                 self._add_choice(inputs, 'direction', 'Direction', 'direction',
                                  (gearcore.ONE_SIDE, gearcore.TWO_SIDES, gearcore.SYMMETRIC),
                                  extent.direction)
@@ -440,24 +465,14 @@ class SpurGearFeature:
                     measurement.listItems.add(name, (name == HALF_LENGTH) == extent.half_length,
                                               os.path.join(self._resources, 'measurement', folder))
                 inputs.addBoolValueInput('flip', 'Flip side', True, '', extent.flip)
-                self._add_choice(inputs, 'extent', 'Extent Type', 'extent', (DISTANCE, TO_OBJECT),
-                                 extent.extent)
-            elif pid == 'thickness2':
-                self._add_choice(inputs, 'extent2', 'Extent Type (side 2)', 'extent',
-                                 (DISTANCE, TO_OBJECT), extent.extent2)
-            value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
-            if feature and parameter_of(feature, pid) is None:   # FEA-5
-                value_input.isEnabled = False
-                value_input.tooltip = ('This gear was made before this input existed. Create it '
-                                       'again to use it.')
-            if pid in OBJECT_AFTER:
-                object_id = OBJECT_AFTER[pid]
-                selection = inputs.addSelectionInput(object_id, OBJECT_INPUTS[object_id],
-                                                     'Select a planar face, construction plane or point')
-                for name in ('PlanarFaces', 'ConstructionPlanes', 'Vertices', 'SketchPoints',
-                             'ConstructionPoints'):
-                    selection.addSelectionFilter(name)
-                selection.setSelectionLimits(0, 1)
+                self._add_side(inputs, 'one', extent.extent)
+                side1 = inputs.addGroupCommandInput('side1', 'Side 1')
+                self._add_side(side1.children, 'side1', extent.extent)
+                side2 = inputs.addGroupCommandInput('side2', 'Side 2')
+                self._add_side(side2.children, 'side2', extent.extent2)
+                self._two = extent.direction == gearcore.TWO_SIDES
+            else:
+                self._add_value(inputs, pid, pid)
         group = inputs.addGroupCommandInput('advanced', 'Advanced')
         changed = False
         for pid, label, kind, default in advanced:
@@ -479,6 +494,33 @@ class SpurGearFeature:
             events.append((command.activate, adsk.core.CommandEventHandler, self._on_activate))
         for event, base_class, callback in events:
             self._listen(event, base_class, callback, self._command_handlers)
+
+    def _add_value(self, inputs: adsk.core.CommandInputs, input_id: str, pid: str, label: str = ''):
+        """A value input for the feature parameter pid (FEA-5)."""
+        _, own_label, kind, default = next(p for p in PARAMS if p[0] == pid)
+        value_input = inputs.addValueInput(input_id, label or own_label, unit(kind),
+                                           self._initial(pid, kind, default)[0])
+        if self._editing and parameter_of(self._editing, pid) is None:   # FEA-5
+            value_input.isEnabled = False
+            value_input.tooltip = 'This gear was made before this input existed. Create it again to use it.'
+
+    @staticmethod
+    def _add_object(inputs: adsk.core.CommandInputs, input_id: str, label: str):
+        """A selection for a start or extent object (IN-20, IN-23, IN-26)."""
+        selection = inputs.addSelectionInput(input_id, label,
+                                             'Select a planar face, construction plane or point')
+        for name in ('PlanarFaces', 'ConstructionPlanes', 'Vertices', 'SketchPoints', 'ConstructionPoints'):
+            selection.addSelectionFilter(name)
+        selection.setSelectionLimits(0, 1)
+
+    def _add_side(self, inputs: adsk.core.CommandInputs, set_name: str, current: str):
+        """One side's extent inputs (UI-11): extent type, thickness, object, offset."""
+        ids = SIDE_SETS[set_name]
+        thickness, offset = SET_PARAMS[set_name]
+        self._add_choice(inputs, ids['extent'], 'Extent Type', 'extent', (DISTANCE, TO_OBJECT), current)
+        self._add_value(inputs, ids['thickness'], thickness, 'Thickness')
+        self._add_object(inputs, ids['object'], 'Extent object')
+        self._add_value(inputs, ids['offset'], offset, 'Extent offset')
 
     def _add_choice(self, inputs: adsk.core.CommandInputs, input_id: str, label: str, icons: str,
                     names, current: str):
@@ -520,27 +562,56 @@ class SpurGearFeature:
 
     def _read(self, inputs: adsk.core.CommandInputs) -> typing.Optional[Settings]:
         """The dialog's current settings, or None while a value cannot be evaluated."""
+        def choice(input_id: str) -> str:
+            return adsk.core.DropDownCommandInput.cast(find_input(inputs, input_id)).selectedItem.name
+
+        def selected(input_id: str):
+            selection = adsk.core.SelectionCommandInput.cast(find_input(inputs, input_id))
+            return selection.selection(0).entity if selection.selectionCount else None
+
+        direction = choice('direction')
+        side1 = SIDE_SETS['side1' if direction == gearcore.TWO_SIDES else 'one']
+        input_of = {'thickness': side1['thickness'], 'extent_offset': side1['offset']}
         expressions, values = {}, {}
         for pid, _, _, _ in PARAMS:
-            value_input = adsk.core.ValueCommandInput.cast(find_input(inputs, pid))
+            value_input = adsk.core.ValueCommandInput.cast(find_input(inputs, input_of.get(pid, pid)))
             if not value_input.isValidExpression:
                 return None
             expressions[pid], values[pid] = value_input.expression, value_input.value
-        curve_input = adsk.core.SelectionCommandInput.cast(inputs.itemById('curve'))
-        curve = curve_input.selection(0).entity if curve_input.selectionCount else None
-
-        def choice(input_id: str) -> str:
-            return adsk.core.DropDownCommandInput.cast(inputs.itemById(input_id)).selectedItem.name
-
-        objects = {}
-        for object_id in OBJECT_INPUTS:
-            selection = adsk.core.SelectionCommandInput.cast(inputs.itemById(object_id))
-            objects[object_id] = selection.selection(0).entity if selection.selectionCount else None
+        objects = {'start_object': selected('start_object'), 'extent_object': selected(side1['object']),
+                   'extent_object2': selected('extent_object2')}
         flip = adsk.core.BoolValueCommandInput.cast(inputs.itemById('flip')).value
         measurement = adsk.core.ButtonRowCommandInput.cast(inputs.itemById('measurement')).selectedItem
-        extent = Extent(choice('start'), choice('direction'), flip, choice('extent'), choice('extent2'),
+        extent = Extent(choice('start'), direction, flip, choice(side1['extent']), choice('extent2'),
                         objects, bool(measurement) and measurement.name == HALF_LENGTH)
-        return Settings(curve, choice('operation'), expressions, values, extent)
+        return Settings(selected('curve'), choice('operation'), expressions, values, extent)
+
+    def _carry_side1(self, inputs: adsk.core.CommandInputs):
+        """When the direction switches to or from Two Sides, carry side 1's values to
+        the set of inputs that is shown now (SIDE_SETS)."""
+        two = adsk.core.DropDownCommandInput.cast(inputs.itemById('direction')).selectedItem.name \
+            == gearcore.TWO_SIDES
+        if two == self._two:
+            return
+        source, target = SIDE_SETS['one' if two else 'side1'], SIDE_SETS['side1' if two else 'one']
+        self._two = two
+        self._syncing = True
+        try:
+            name = adsk.core.DropDownCommandInput.cast(find_input(inputs, source['extent'])).selectedItem.name
+            items = adsk.core.DropDownCommandInput.cast(find_input(inputs, target['extent'])).listItems
+            for i in range(items.count):
+                items.item(i).isSelected = items.item(i).name == name
+            for role in ('thickness', 'offset'):
+                adsk.core.ValueCommandInput.cast(find_input(inputs, target[role])).expression = \
+                    adsk.core.ValueCommandInput.cast(find_input(inputs, source[role])).expression
+            src = adsk.core.SelectionCommandInput.cast(find_input(inputs, source['object']))
+            dst = adsk.core.SelectionCommandInput.cast(find_input(inputs, target['object']))
+            if src.selectionCount or dst.selectionCount:   # leave empty ones alone (_keeps_object)
+                dst.clearSelection()
+                if src.selectionCount:
+                    dst.addSelection(src.selection(0).entity)
+        finally:
+            self._syncing = False
 
     def _evaluate(self, settings: Settings) -> Evaluation:
         known = dict(self._known)
@@ -602,16 +673,15 @@ class SpurGearFeature:
             # UI-10, UI-11: show only what the chosen start, direction and extents use.
             e = settings.extent
             symmetric, two = e.direction == gearcore.SYMMETRIC, e.direction == gearcore.TWO_SIDES
+            one = e.direction == gearcore.ONE_SIDE
+            to1, to2 = e.extent == TO_OBJECT, e.extent2 == TO_OBJECT
             shown = {'start_offset': e.start != PROFILE_PLANE, 'start_object': e.start == OBJECT,
-                     'measurement': symmetric,
-                     'flip': not symmetric and (two or e.extent == DISTANCE),
-                     'extent': not symmetric,
-                     'thickness': symmetric or e.extent == DISTANCE,
-                     'extent_object': not symmetric and e.extent == TO_OBJECT,
-                     'extent_offset': not symmetric and e.extent == TO_OBJECT,
-                     'extent2': two, 'thickness2': two and e.extent2 == DISTANCE,
-                     'extent_object2': two and e.extent2 == TO_OBJECT,
-                     'extent_offset2': two and e.extent2 == TO_OBJECT}
+                     'measurement': symmetric, 'flip': not symmetric and (two or not to1),
+                     'extent': one, 'thickness': symmetric or (one and not to1),
+                     'extent_object': one and to1, 'extent_offset': one and to1,
+                     'side1': two, 'side2': two,
+                     'side1_thickness': not to1, 'side1_extent_object': to1, 'side1_extent_offset': to1,
+                     'thickness2': not to2, 'extent_object2': to2, 'extent_offset2': to2}
             for input_id, visible in shown.items():
                 find_input(inputs, input_id).isVisible = visible
             kept = [OBJECT_INPUTS[i] for i in OBJECT_INPUTS if self._keeps_object(settings, i)]
@@ -622,16 +692,26 @@ class SpurGearFeature:
         adsk.core.TextBoxCommandInput.cast(inputs.itemById('info')).formattedText = text
 
     def _on_input_changed(self, args: adsk.core.InputChangedEventArgs):
-        if args.input.id in OBJECT_INPUTS:
-            self._known.pop(args.input.id, None)
-            self._changed.add(args.input.id)
-        if args.input.id != 'info':
-            self._update_dialog(self._command.commandInputs)
+        if self._syncing:
+            return
+        input_id, inputs = args.input.id, self._command.commandInputs
+        if input_id in INPUT_OBJECT:
+            self._known.pop(INPUT_OBJECT[input_id], None)
+            self._changed.add(INPUT_OBJECT[input_id])
+        if input_id == 'direction':
+            self._carry_side1(inputs)
+        if input_id != 'info':
+            self._update_dialog(inputs)
+        if input_id in CHOICE_OBJECT:
+            # UI-11: with Object or To Object chosen, the next click picks the object.
+            selection_id, wanted = CHOICE_OBJECT[input_id]
+            if adsk.core.DropDownCommandInput.cast(args.input).selectedItem.name == wanted:
+                adsk.core.SelectionCommandInput.cast(find_input(inputs, selection_id)).hasFocus = True
 
     def _on_pre_select(self, args: adsk.core.SelectionEventArgs):
         if args.activeInput.id == 'curve':
             args.isSelectable = geometry.is_gear_curve(geometry.native(args.selection.entity))
-        elif args.activeInput.id in OBJECT_INPUTS:
+        elif args.activeInput.id in INPUT_OBJECT:
             args.isSelectable = geometry.is_height_object(args.selection.entity)
 
     def _on_validate(self, args: adsk.core.ValidateInputsEventArgs):
