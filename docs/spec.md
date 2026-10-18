@@ -2,7 +2,7 @@
 
 Status: **Draft 0.9** (2026-10-18). Version 0.8 describes the add-in as implemented in
 version 0.9.0. Draft 0.9 adds gear trains oriented from a layout sketch (§7), which are not
-implemented yet: TRN-1 to TRN-11, the train part of GEO-9, FEA-12, FEA-13, UI-9, VAL-20 to
+implemented yet: TRN-1 to TRN-11, the train part of GEO-9, FEA-12 to FEA-14, UI-9, VAL-20 to
 VAL-24, D-27 to D-31, ARC-8 and the train checks in TST-2. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
@@ -250,6 +250,12 @@ other (D-27).
   it and show the last computed body.
 - **FEA-10** The curve may lie in any sketch of the design: on any plane or planar face, and in
   any component.
+- **FEA-14** The gear is created in the active component, as Fusion's own features are, also
+  when its curve is in another component, for example in a layout sketch. The gear's
+  position follows the curve through the assembly, in the positions at the gear's place in the
+  timeline (FEA-13). If the active component has several occurrences, the gear keeps to the
+  one that was active when it was created. Editing a gear does not move it to another
+  component.
 - **FEA-11** Fusion offers Edit Feature for custom features only in Hybrid and Assembly
   designs, not in Part designs. This is a limitation of Fusion, also seen with other custom
   feature add-ins. In a Part design the gear is still created, recomputed and editable
@@ -259,8 +265,8 @@ other (D-27).
   circles, and adding, turning or removing a start line (SPIKE-8). The gears do not depend on
   each other: their order in the timeline does not matter, and deleting one leaves the others
   alone. Only the layout sketch must come before them.
-- **FEA-13** Positions in assembly coordinates, needed when the gear and its layout sketch are
-  in different components, are those at the gear's place in the timeline. Moving a component
+- **FEA-13** Positions in assembly coordinates, needed when the gear, its curve and its layout
+  sketch are not all in one component, are those at the gear's place in the timeline. Moving a component
   later, or driving a joint, does not turn the gear (SPIKE-7).
 
 ## 9. Command and user interface
@@ -305,7 +311,7 @@ other (D-27).
 | VAL-21 | A loop in the gear's train does not mesh (TRN-8) | error |
 | VAL-22 | The layout sketch's plane is not parallel to the gear's plane (TRN-10) | error |
 | VAL-23 | Two circles of the gear's train nearly touch (TRN-11) | warning |
-| VAL-24 | The layout sketch is in another component, and the gear's curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has several occurrences). Pick it in the assembly instead | error |
+| VAL-24 | The gear's curve or its layout sketch is in another component than the gear, and the curve was picked in a way that does not tell which occurrence of its component is meant (inside an activated component that has several occurrences). Pick it in the assembly instead | error |
 
 A value outside the range given in §4 is an error and is reported with the ID of that input.
 
@@ -415,8 +421,11 @@ change of the layout sketch reached every gear, created in any order.
   are stored with the feature as named values.
 - **ARC-8** The train rules (TRN-2 to TRN-9, TRN-11) are `gearcore` functions on plain data:
   the layout circles, arcs and lines in the layout sketch's coordinates in, tooth axes and
-  issues out. The Fusion layer finds the layout circle (TRN-1), reads the layout sketch,
-  converts the tooth axis into the gear's plane (TRN-10) and stores nothing extra.
+  issues out. The Fusion layer finds the layout circle (TRN-1), reads the layout sketch and
+  converts the tooth axis into the gear's plane (TRN-10). The rotation is relative to the
+  curve's own frame, so it holds in whatever component the gear is (FEA-14); only the outline's
+  placement is carried into the gear's component. The occurrence that was active at creation
+  is stored with the feature as a named value.
 - **TST-1** `gearcore` has pytest tests runnable outside Fusion. Each test names the requirement
   IDs it covers.
 - **TST-2** Reference checks include: DER formulas against hand-calculated values;
