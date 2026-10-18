@@ -223,3 +223,17 @@ center fixed by dimensions or tangent constraints:
 82. Edit a gear made before this version: it opens with One Side and Distance; Thickness
     (side 2) is disabled.
 83. Create a Symmetric gear; start a new one: it starts with Symmetric again (UI-7).
+
+## Measurement and To Object offset (IN-27 to IN-29, UI-11)
+
+84. Direction Symmetric: a Measurement row with two icon buttons appears under Direction,
+    Whole Length selected. Thickness 6 mm gives a 6 mm gear centered on the start.
+85. Click Half Length: the gear is 12 mm, 6 mm each way. Hover over the buttons: the tooltips
+    say Half Length and Whole Length. The icons are clear in light and dark themes.
+86. Extent To Object: an Extent offset input appears under the object. A plane 8 mm above with
+    offset 1 mm: the gear ends 9 mm above. Offset -1 mm: 7 mm. A plane 4 mm below with
+    offset 1 mm: the gear goes 5 mm down.
+87. Two Sides with side 2 To Object: side 2 has its own offset, which works the same way.
+88. Change an offset in Change Parameters: the gear follows (the offsets are parameters).
+89. Edit a Symmetric Half Length gear: Half Length is still selected. Create a new gear: it
+    starts with Symmetric and Half Length again (UI-7).

@@ -42,10 +42,12 @@ opened without it shows each gear as last computed.
    - Start: from the sketch plane (Profile Plane), moved along the sketch normal by an offset
      (Offset), or from a parallel face, construction plane or point (Object), optionally with
      an offset too.
-   - Direction: One Side, Two Sides (each side with its own extent) or Symmetric (the
-     thickness is the whole face width, centered on the start).
+   - Direction: One Side, Two Sides (each side with its own extent) or Symmetric, centered
+     on the start. For Symmetric, Measurement chooses whether the thickness is the whole face
+     width or goes each way.
    - Extent: a Distance (the thickness), or To Object, up to a parallel face, construction
-     plane or point.
+     plane or point, with an offset that moves the end past the object (or short of it, if
+     negative).
 5. Choose the **Operation**: New Body, or Join to merge the gear into every body it touches.
 6. OK. The gear appears as one "Spur Gear" feature in the timeline.
 
