@@ -51,6 +51,8 @@ class Orientation:
     touching: int                  # number of curves this one touches
     start_line: bool               # whether the train is oriented by a start line
     issues: typing.List[Issue]     # VAL-20, VAL-21, VAL-23 for this train
+    #: The curves it touches (TRN-12): direction from its center to theirs, and radius.
+    mates: typing.List[typing.Tuple[float, float]] = dataclasses.field(default_factory=list)
 
 
 def _direction(a: Point, b: Point) -> float:
@@ -128,7 +130,9 @@ def orientation(curves: typing.Sequence[LayoutCurve], lines: typing.Sequence[Lay
             angle = _start_line_angle(curves[k], line)
             if angle is not None:
                 starts.append((k, angle))
-    result = Orientation(None, len(train), len(neighbours[index]), bool(starts), issues)
+    result = Orientation(None, len(train), len(neighbours[index]), bool(starts), issues,
+                         [(_direction(curves[index].center, curves[n].center), curves[n].radius)
+                          for n in sorted(neighbours[index])])
     if len(starts) > 1:
         issues.append(Issue('VAL-20', ERROR, 'This gear train has {} start lines; it may have at '
                             'most one.'.format(len(starts))))

@@ -1,4 +1,4 @@
-"""Gear trains in a layout sketch: TRN-3 to TRN-9, TRN-11, VAL-20, VAL-21, VAL-23."""
+"""Gear trains in a layout sketch: TRN-3 to TRN-9, TRN-11, TRN-12, VAL-20, VAL-21, VAL-23."""
 
 import math
 
@@ -165,3 +165,14 @@ def test_circles_too_small_for_a_gear_are_left_out():
     """TRN-9"""
     curves = [circle(0, 0, 10), circle(11, 0, 1)]   # 2 teeth at module 1
     assert orientation(curves, [], 1.0, 0).train_size == 1
+
+
+def test_an_arc_knows_its_mates():
+    """TRN-12: the curves it touches, with their direction and radius."""
+    arc = LayoutCurve((0, 0), 10, start=-90 * DEG, sweep=180 * DEG)
+    right = circle(15, 0, 5)
+    up = LayoutCurve(polar((0, 0), 18, 60), 8)
+    behind = circle(-15, 0, 5)     # touches the full circle, but not the arc
+    o = orientation([right, up, behind, arc], [], 1.0, 3)
+    assert sorted((round(d / DEG, 6), r) for d, r in o.mates) == [(0.0, 5), (60.0, 8)]
+    assert orientation([right, behind], [], 1.0, 0).mates == []
