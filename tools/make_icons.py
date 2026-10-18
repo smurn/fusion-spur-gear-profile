@@ -2,8 +2,10 @@
 
     python tools/make_icons.py
 
-The icon is a real gear outline from gearcore, filled with anti-aliasing. Pure
-Python, no image library needed.
+The command icon is a real gear outline from gearcore, filled with anti-aliasing.
+The Measurement buttons (UI-11) show a body seen from the side, centered on the
+start plane, with a dimension across its whole width or from the plane to one
+side, like Extrude's. Pure Python, no image library needed.
 """
 
 import math
@@ -56,8 +58,12 @@ def coverage(loops, size: int):
 
 
 def png(path: str, alpha):
-    size = len(alpha)
-    raw = b''.join(b'\x00' + b''.join(bytes(FILL + (round(255 * a),)) for a in line) for line in alpha)
+    write_png(path, [[FILL + (round(255 * a),) for a in line] for line in alpha])
+
+
+def write_png(path: str, rgba):
+    size = len(rgba)
+    raw = b''.join(b'\x00' + b''.join(bytes(px) for px in line) for line in rgba)
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (struct.pack('>I', len(data)) + kind + data
@@ -68,6 +74,54 @@ def png(path: str, alpha):
                 + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
 
 
+BODY = (150, 170, 190)     # the extruded body, seen from the side
+PLANE = (90, 90, 90)       # the start plane
+ARROW = FILL               # the dimension
+
+
+def button(size: int, half: bool):
+    """A Measurement button: shapes in a unit square, y down, drawn with
+    SAMPLES x SAMPLES samples per pixel, later shapes over earlier ones."""
+    left = 0.5 if half else 0.08
+
+    def body(x, y):
+        return 0.12 <= x <= 0.88 and 0.22 <= y <= 0.55
+
+    def plane(x, y):
+        return abs(x - 0.5) <= 0.045 and 0.08 <= y <= 0.92
+
+    def arrow(x, y):
+        line = left <= x <= 0.92 and abs(y - 0.76) <= 0.04
+        head_right = 0.76 <= x <= 0.92 and abs(y - 0.76) <= (0.92 - x) * 0.9
+        head_left = not half and 0.08 <= x <= 0.24 and abs(y - 0.76) <= (x - 0.08) * 0.9
+        tick = half and abs(x - left) <= 0.035 and 0.64 <= y <= 0.88
+        return line or head_right or head_left or tick
+
+    shapes = ((BODY, body), (PLANE, plane), (ARROW, arrow))
+    rows = []
+    for row in range(size):
+        line = []
+        for col in range(size):
+            totals, hits = [0.0, 0.0, 0.0], 0
+            for sy in range(SAMPLES):
+                for sx in range(SAMPLES):
+                    x = (col + (sx + 0.5) / SAMPLES) / size
+                    y = (row + (sy + 0.5) / SAMPLES) / size
+                    color = None
+                    for shape_color, inside in shapes:
+                        if inside(x, y):
+                            color = shape_color
+                    if color:
+                        hits += 1
+                        totals = [t + c for t, c in zip(totals, color)]
+            if hits:
+                line.append(tuple(round(t / hits) for t in totals) + (round(255 * hits / SAMPLES ** 2),))
+            else:
+                line.append((0, 0, 0, 0))
+        rows.append(line)
+    return rows
+
+
 def main():
     out = os.path.join(ROOT, 'resources')
     os.makedirs(out, exist_ok=True)
@@ -76,6 +130,12 @@ def main():
         teeth = 8 if size <= 16 else 12
         png(os.path.join(out, name), coverage(gear_loops(teeth), size))
         print(name, size, 'px,', teeth, 'teeth')
+    for folder, half in (('half_length', True), ('whole_length', False)):
+        path = os.path.join(out, 'measurement', folder)
+        os.makedirs(path, exist_ok=True)
+        for name, size in FILES:
+            write_png(os.path.join(path, name), button(size, half))
+        print('measurement/' + folder)
 
 
 if __name__ == '__main__':
