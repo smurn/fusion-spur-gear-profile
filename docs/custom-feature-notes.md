@@ -11,9 +11,11 @@ Each point says how well it is established:
 - **Observed**: seen, but the cause was not isolated.
 - **Open**: not understood.
 
-The working code is in [`fusion_layer/feature.py`](../fusion_layer/feature.py) and
-[`fusion_layer/geometry.py`](../fusion_layer/geometry.py). The experiments are in
-[`spikes/GearFeatureSpike`](../spikes/GearFeatureSpike) and described in [spikes.md](spikes.md).
+The working code is in [`fusion_layer/feature.py`](../fusion_layer/feature.py),
+[`fusion_layer/geometry.py`](../fusion_layer/geometry.py) and
+[`fusion_layer/layout.py`](../fusion_layer/layout.py). The experiments are in `spikes/`
+(GearFeatureSpike, MeshSpike, ComponentMeshSpike, LayoutSketchSpike) and described in
+[spikes.md](spikes.md) as SPIKE-5 to SPIKE-8.
 
 ## The shape that works
 
@@ -76,6 +78,15 @@ compute events while your own dialog is open and rebuild the body yourself.
 - **Do not make the feature depend on the body its combine modifies.** (Observed) A Join gear
   that listed its target body as a dependency did not appear at all, with no error. It worked
   after the dependency was removed, but the Join logic was reworked in the same change.
+- **A face of that body works, though.** (Confirmed) A joined gear that starts on a face of
+  the very body it joins follows the face when the body changes. The dependency refers to the
+  face as it is at the feature's place in the timeline, before the join. That face does not
+  exist at the end of the timeline, which has two consequences for the edit dialog:
+  - It cannot show the face as selected. `addSelection` of the dependency's entity gives a
+    selection that is not valid there.
+  - Setting `dependency.entity` to a face the user selected at the end of the timeline, which
+    is the joined body's new face, fails with "InternalValidationError : face" when the
+    timeline is rolled back. Keep the existing dependency unless the user picks a new entity.
 - To change a dependency later, set `dependency.entity` under the same timeline rollback.
 - **A custom feature can depend on another custom feature.** (Confirmed, SPIKE-6) Not in
   Autodesk's list of allowed entities, but accepted. The dependent feature recomputes whenever
@@ -113,8 +124,14 @@ compute events while your own dialog is open and rebuild the body yourself.
   None. Wrap it, and fall back to a default.
 - **A selection that the preview invalidates disables OK.** (Observed) A Join preview replaced
   the faces of the joined body; with one of those faces selected in the dialog, Fusion greyed
-  out OK even though `validateInputs` said the inputs were valid. Keep the preview from
-  modifying selected entities.
+  out OK even though `validateInputs` said the inputs were valid, and nothing was logged. Keep
+  the preview from modifying selected entities: we preview such a gear as its own body and
+  join it only on OK.
+- **Values the dialog needs but cannot compute can be stored in the command.** A dialog runs at
+  the end of the timeline, where some of the feature's inputs no longer exist (see the face
+  above). We store such a derived value (where the gear starts) in a named value whenever the
+  gear is created or edited, and the edit dialog uses it for its checks. The compute itself
+  must not write it.
 - For non-numeric settings (a checkbox, an operation), use
   `feature.customNamedValues.addOrSetValue(id, text)`. They are stored with the feature but
   are not parameters and do not trigger a recompute.
@@ -190,6 +207,14 @@ Notes:
   dialog.
 - Selection inputs cannot be filled in `commandCreated`. Use `addSelection` in the `activate`
   event.
+- **A selection input with the "Features" filter accepts a custom feature clicked in the
+  timeline.** (Confirmed) It hands over the `CustomFeature` itself, as a proxy through its
+  occurrence when it is in a component.
+- **`timelineObject` can fail inside the dialog.** (Observed) In a hybrid design, reading
+  `feature.timelineObject.index` from `validateInputs` raised "this is not a parametric
+  design", for every custom feature, and `design.designType` reported a direct design. The
+  same property worked in `execute` and `executePreview` (for `rollTo`). Do not rely on
+  timeline positions while the dialog is checking its inputs.
 
 ### Timeline handling during an edit
 
@@ -263,9 +288,19 @@ To match that (Confirmed):
 - **Any change in a sketch recomputes every feature that depends on a linked projection of
   any of its curves**, not just of the curve that changed. (Confirmed, SPIKE-8)
 
-- Create the features in the component that owns the selected entity
-  (`native.parentSketch.parentComponent.features`). (Confirmed)
-- Compute geometry in that component's model space: `sketch.sketchToModelSpace(point)`,
+- **Create the features in the active component**, as Fusion's own features do
+  (`design.activeComponent`, and `design.activeOccurrence`, which is None for the root).
+  (Confirmed) Creating them in the component that owns the selected sketch felt wrong to the
+  user: a gear made from a circle in a layout sketch in the root then landed in the root.
+- When the selected entity is in another component, carry its geometry into the feature's
+  component: up through the entity's occurrence path into assembly coordinates, applying each
+  level's `nativeObject.transform2`, then down through the target occurrence's path with each
+  level's inverse (`transform2.copy()`, `invert()`), from the top level down. Transforming
+  points and vectors one level at a time avoids having to know the order `Matrix3D.transformBy`
+  composes in. (Confirmed)
+- Store the active occurrence's entity token with the feature, so that a component with
+  several occurrences keeps using the one the feature was made in.
+- Compute geometry in the component's model space: `sketch.sketchToModelSpace(point)`,
   `sketch.xDirection`, `sketch.yDirection`. This works for sketches on tilted planes and on
   body faces.
 
@@ -285,9 +320,10 @@ To match that (Confirmed):
 ## Still open
 
 - Why `Command.editingFeature` is sometimes refused.
-- Whether the target-body dependency was really what broke Join.
+- Whether the target-body dependency was really what broke Join. A face of the target body
+  works (see Dependencies).
 - Whether `CustomFeatureInput.addDependency` works when lesson 1 is respected.
 - What happens when a dependency is deleted, or its sketch is. Deleting a custom feature that
   another depends on: by hand, the dependent ones are deleted too; through the API
   (`deleteMe`), they stay in health state Unknown without a recompute.
-- Whether a joined gear follows its curve after the curve moves (CHK-5 in the spec).
+- Why `timelineObject` fails inside `validateInputs` in a hybrid design.
