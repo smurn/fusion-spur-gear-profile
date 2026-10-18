@@ -322,11 +322,14 @@ other (D-27).
 - **UI-5** OK is disabled while any VAL error is present. One case is only caught on OK, with
   a message: see VAL-12.
 - **UI-6** Creating a gear is a single undo step. So is each edit.
-- **UI-7** The create dialog starts with the inputs of the last gear that was created: all
-  numeric inputs (as entered, so references to user parameters are kept), flip side,
-  operation, start, direction and extents (IN-18, IN-21, IN-22, IN-25). The curve and the start
-  and extent objects are not remembered. This lasts until the add-in is stopped; it is not
-  saved. If a remembered expression is not valid in the current design, its value is used.
+- **UI-7** The create dialog starts with the inputs of the last gear that was created: the
+  numeric inputs (as entered, so references to user parameters are kept) and the operation.
+  The extrusion settings are not remembered; a new gear always starts with Profile Plane,
+  One Side, Distance, Whole Length, no flip, and the defaults of the start offset, the side 2
+  thickness and the To Object offsets (IN-13, IN-18 to IN-29 except IN-20, IN-23 and IN-26, which
+  are objects). The thickness is remembered. The curve and the start and extent objects are not
+  remembered. This lasts until the add-in is stopped; it is not saved. If a remembered
+  expression is not valid in the current design, its value is used.
 - **UI-8** Pressure angle, addendum, dedendum and root fillet coefficients and the max profile
   deviation are in a group named Advanced. It is collapsed unless one of them differs from
   its default.
@@ -449,6 +452,9 @@ Resolved on 2026-10-18, after SPIKE-8:
   Extrude's; Whole Length is the default, so a gear's thickness stays its face width unless
   chosen otherwise (IN-27). To Object has an offset per side, positive past the object, away
   from the start (IN-28, IN-29).
+- **D-35** New gears start with the default extrusion settings, not the last used ones
+  (UI-7): Extrude also starts from its defaults, and a leftover Two Sides or Object start is
+  easily overlooked.
 
 ## 13. Feasibility
 
