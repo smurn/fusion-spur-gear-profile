@@ -64,8 +64,10 @@ positive profile shift avoids it.
 Gears mesh when their circles touch in one sketch, the layout sketch. Draw the whole train
 there: a circle for every gear, made tangent to the gears it meshes with. Then create each
 gear on its circle, either directly in the layout sketch or on a linked projection of the
-circle in the gear's own component. Each gear works out from the layout sketch how its train
-must be turned so that every tooth faces a tooth space of its neighbor.
+circle in the gear's own component. Like Fusion's own features, a gear is created in the
+active component, so you can also activate the gear's component and click its circle in the
+layout sketch directly. Each gear works out from the layout sketch how its train must be
+turned so that every tooth faces a tooth space of its neighbor.
 
 - The gears do not refer to each other. They can be created in any order and in any
   component; only the layout sketch must come before them in the timeline.

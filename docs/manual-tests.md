@@ -171,3 +171,12 @@ center fixed by dimensions or tangent constraints:
     all four mesh. Three 24 mm circles all tangent to each other: their gears fail with an
     error that the loop does not mesh.
 63. Save, close and reopen. Change the start line of train 1: the gears follow.
+64. Active component (FEA-14): add two more tangent circles to the root layout sketch. Create
+    a component Gear S, activate it, and create a gear by clicking one of the new circles in
+    the layout sketch directly, without projecting it. The gear appears in Gear S (browser
+    and timeline), on the layout circle. Do the same for the other circle in a component
+    Gear T: the two mesh.
+65. Change the position of Gear S's circle in the layout: the gear in Gear S follows and still
+    meshes with the one in Gear T. Edit the gear in Gear S: it stays in Gear S.
+66. Create a gear with the root component active from a circle in the layout: it is in the
+    root component, as before.
