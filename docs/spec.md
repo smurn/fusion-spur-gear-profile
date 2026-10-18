@@ -6,7 +6,8 @@ in the active component (FEA-14), start, direction and extent options like Extru
 (IN-18 to IN-29), with icons and dark-theme icons (UI-11, UI-12). Checked by hand so far:
 gears from a layout sketch in several components, moving circles in the layout sketch, the
 active component, a joined gear starting on a face (CHK-9), and the start, direction and
-extent options with their dialog (manual checklist steps 75 to 95). The rest of the manual
+extent options with their dialog, default settings and negative distances (manual checklist
+steps 75 to 99). The rest of the manual
 checklist for these features is still to be done. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
