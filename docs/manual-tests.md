@@ -14,7 +14,7 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 1. SOLID › CREATE shows **Spur Gear**. Start it.
 2. Only sketch circles and arcs can be picked for "Circle or arc" (UI-2).
 3. Pick the circle. The info box shows 24 teeth and the diameters (UI-4).
-4. A preview of the gear appears and follows changes to Module and Thickness (UI-3, CHK-6).
+4. A preview of the gear appears and follows changes to Module and Distance (UI-3, CHK-6).
 5. Set Module to 3 mm. The tooth count drops to 8, the info box reports undercut, and the
     preview shows 8 undercut teeth. Set Module to 20 mm: fewer than 3 teeth is an error and OK
     is disabled (UI-5). Set Module back to 1 mm; the preview returns.
@@ -23,16 +23,16 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 
 ## Dialog layout and remembered settings (UI-7, UI-8)
 
-8. Start Spur Gear in a fresh session. Module, Thickness, Bore diameter, Flip side, Start
-    rotation, Profile shift, Backlash and Print offset are visible. Pressure angle, the
+8. Start Spur Gear in a fresh session. Module, Start, Direction, Extent Type, Distance, Bore
+    diameter, Start rotation, Profile shift, Backlash and Print offset are visible. Pressure angle, the
     three coefficients and Max profile deviation are in a collapsed group named Advanced.
-9. Create a gear with Module 2 mm, Thickness 8 mm, Flip side ticked and Pressure angle 25 deg.
-    Start Spur Gear again: Module, Thickness and Pressure angle are filled in, and Advanced is
-    open because Pressure angle is not at its default. Flip side is off again (D-35). The
-    circle is not selected.
+9. Create a gear with Module 2 mm, Distance 8 mm, Direction Symmetric and Pressure angle
+    25 deg. Start Spur Gear again: Module, Distance and Pressure angle are filled in, and
+    Advanced is open because Pressure angle is not at its default. Direction is One Side again
+    (D-35). The circle is not selected.
 10. Set Pressure angle back to 20 deg and create another gear. Start Spur Gear again: Advanced
     is collapsed.
-11. Edit an existing gear and change its thickness. Start Spur Gear again: the dialog still
+11. Edit an existing gear and change its distance. Start Spur Gear again: the dialog still
     shows the values of the last gear that was created, not of the edit.
 12. Stop and start the add-in. The dialog is back to the defaults.
 
@@ -40,7 +40,7 @@ moved (two position dimensions and a diameter dimension). Finish the sketch.
 
 13. Edit the sketch, move the circle, finish. The gear follows.
 14. Change the circle diameter to 30 mm. The gear has 30 teeth.
-15. Modify › Change Parameters: the feature lists its parameters. Change Thickness to 8 mm;
+15. Modify › Change Parameters: the feature lists its parameters. Change Distance to 8 mm;
     the gear updates. Set Module to an expression using a user parameter; it updates.
 16. Change the circle diameter to 2 mm (fewer than 3 teeth). The feature turns red or yellow
     in the timeline and keeps its previous body (FEA-8). Set it back to 30 mm; the feature
@@ -53,8 +53,8 @@ custom features (FEA-11).
 
 17. Double-click the feature in the timeline, or right-click › Edit Feature. The dialog opens
     with the current values and the circle selected.
-18. Change Thickness and tick Flip side. The preview updates. OK. The gear is on the other
-    side of the sketch plane with the new thickness, and it is still one feature.
+18. Change Distance to a negative value. The preview updates. OK. The gear is on the other
+    side of the sketch plane, and it is still one feature.
 19. Open the edit dialog again and Cancel. Nothing changes and the timeline marker is back at
     the end.
 20. Open the edit dialog, pick a different circle (draw a second one first), OK. The gear
@@ -74,7 +74,7 @@ custom features (FEA-11).
 ## Undo and redo (CHK-2, UI-6)
 
 25. Create a gear, then Undo once. The gear and its timeline node are gone. Redo brings it back.
-26. Edit a gear's thickness in the dialog, then Undo once. The old thickness is back.
+26. Edit a gear's distance in the dialog, then Undo once. The old distance is back.
 
 ## Join (CHK-5, FEA-6)
 
@@ -184,10 +184,10 @@ center fixed by dimensions or tangent constraints:
 
 ## Start (IN-18 to IN-20, GEO-12, UI-10, CHK-9)
 
-67. In a new gear's dialog, Start is right before Thickness and set to Profile Plane; there is
+67. In a new gear's dialog, Start is right before Direction and set to Profile Plane; there is
     no offset or object input. The gear starts on the sketch plane, as before.
 68. Set Start to Offset and the offset to 3 mm: the gear moves 3 mm along the sketch normal.
-    Turn on Flip side: the gear now extends the other way from the same start, 3 mm up.
+    Set Distance to -5 mm: the gear now extends the other way from the same start, 3 mm up.
     Set -3 mm: it starts below the sketch plane.
 69. Set Start to Object and pick a construction plane parallel to the sketch, 10 mm away: the
     gear starts on it. Set the offset to 1 mm: it starts 1 mm beyond the plane. Move the
@@ -206,13 +206,13 @@ center fixed by dimensions or tangent constraints:
 
 ## Direction and extent (IN-21 to IN-26, GEO-12, UI-11)
 
-75. In a new gear's dialog: after Start come Direction (One Side), Flip side, Extent Type
-    (Distance) and Thickness. Nothing for side 2 is shown.
-76. Direction Symmetric: Flip side and Extent Type disappear. With Thickness 6 mm the gear runs
+75. In a new gear's dialog: after Start come Direction (One Side), Extent Type (Distance) and
+    Distance. There is no Flip side. Nothing for side 2 is shown.
+76. Direction Symmetric: Extent Type disappears. With Distance 6 mm (or -6 mm) the gear runs
     from 3 mm below to 3 mm above the start; the info box shows the face width.
 77. Direction Two Sides: the side inputs move into two foldable groups, Side 1 and Side 2.
-    Side 1 Thickness 5 mm, Side 2 Thickness 2 mm: the gear runs from 2 mm below to 5 mm above
-    the start. Flip side swaps them.
+    Side 1 Distance 5 mm, Side 2 Distance 2 mm: the gear runs from 2 mm below to 5 mm above
+    the start. Side 1 -5 mm and Side 2 -2 mm swap them.
 78. One Side with Extent Type To Object: pick a construction plane 8 mm above the sketch: the gear
     ends on it; the info box shows a face width of 8 mm. Pick one 4 mm below instead: the gear
     goes down to it. Move the plane: the gear follows.
@@ -222,14 +222,14 @@ center fixed by dimensions or tangent constraints:
     OK is disabled.
 81. A Join gear whose extent goes to a face of the body it joins: OK is available, the gear
     joins on OK, and it follows the face. Edit it: the extent object is kept ("as before").
-82. Edit a gear made before this version: it opens with One Side and Distance; Thickness
-    (side 2) is disabled.
+82. Edit a gear made before this version: it opens with One Side and Distance; side 2's
+    Distance is disabled.
 83. Create a Symmetric gear; start a new one: it starts with One Side (UI-7, D-35).
 
 ## Measurement and To Object offset (IN-27 to IN-29, UI-11)
 
 84. Direction Symmetric: a Measurement row with two icon buttons appears under Direction,
-    Whole Length selected. Thickness 6 mm gives a 6 mm gear centered on the start.
+    Whole Length selected. Distance 6 mm gives a 6 mm gear centered on the start.
 85. Click Half Length: the gear is 12 mm, 6 mm each way. Hover over the buttons: the tooltips
     say Half Length and Whole Length. The icons are clear in light and dark themes.
 86. Extent Type To Object: an Extent offset input appears under the object. A plane 8 mm above with
@@ -250,13 +250,22 @@ center fixed by dimensions or tangent constraints:
     are clear. Switch back: the normal icons return.
 92. One Side, Extent Type To Object with an object and an offset of 1 mm. Switch Direction to
     Two Sides: Side 1 shows the same extent type, object and offset. Change Side 1's
-    thickness, switch back to One Side: the changed thickness is kept.
+    distance, switch back to One Side: the changed distance is kept.
 93. Choose Extent Type To Object (ungrouped, in Side 1 and in Side 2) and Start Object: each
     time the matching selection is active right away, so clicking a face picks it without
     clicking into the selection first.
 94. Fold and unfold Side 1 and Side 2: the inputs stay as they were.
 95. Edit a Two Sides gear whose side 1 goes To Object: the dialog opens with the groups, and
     the info box says the extent object is kept.
-96. Create a Two Sides gear with Side 1 To Object, Side 2 Thickness 3 mm and Thickness 7 mm.
-    Start a new gear: Profile Plane, One Side, Distance, Flip side off, Thickness 7 mm.
-    Switch to Two Sides: Side 2's thickness is the default 5 mm, not 3 mm.
+96. Create a One Side gear with Distance 7 mm, then a Two Sides gear with Side 2 Distance
+    3 mm. Start a new gear: Profile Plane, One Side, Extent Type Distance, Distance 7 mm.
+    Switch to Two Sides: Side 2's distance is the default 5 mm, not 3 mm.
+
+## Negative distances (IN-12, IN-24, D-36)
+
+97. One Side, Distance -5 mm: the gear extends 5 mm against the sketch normal. Distance 0:
+    error, OK is disabled. The info box always shows the face width.
+98. Change Parameters lists the distance of a new gear as "Distance", not "Thickness".
+99. A gear made with Flip side ticked, before this version: it keeps its shape after the
+    add-in update. Edit it: Distance shows its old value negated (for example "-(5 mm)"). OK:
+    the gear stays where it was.

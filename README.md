@@ -36,17 +36,16 @@ opened without it shows each gear as last computed.
    the info box at the bottom shows it together with the resulting diameters. The gear's
    reference diameter is module times tooth count, so it usually differs a little from the
    curve you drew.
-4. Set **Thickness**, and a **Bore diameter** if you want a hole. **Flip side** puts the gear
-   on the other side of the sketch plane. **Start**, **Direction** and **Extent Type** work as in
-   Extrude:
+4. Set **Distance**, the gear's face width, and a **Bore diameter** if you want a hole. A
+   negative distance puts the gear on the other side of the sketch plane. **Start**,
+   **Direction** and **Extent Type** work as in Extrude:
    - Start: from the sketch plane (Profile Plane), moved along the sketch normal by an offset
      (Offset), or from a parallel face, construction plane or point (Object), optionally with
      an offset too.
    - Direction: One Side, Two Sides (each side with its own extent, in groups Side 1 and
-     Side 2) or Symmetric, centered
-     on the start. For Symmetric, Measurement chooses whether the thickness is the whole face
-     width or goes each way.
-   - Extent Type: a Distance (the thickness), or To Object, up to a parallel face, construction
+     Side 2) or Symmetric, centered on the start. For Symmetric, Measurement chooses whether
+     the distance is the whole face width or goes each way.
+   - Extent Type: a Distance, or To Object, up to a parallel face, construction
      plane or point, with an offset that moves the end past the object (or short of it, if
      negative).
 5. Choose the **Operation**: New Body, or Join to merge the gear into every body it touches.
