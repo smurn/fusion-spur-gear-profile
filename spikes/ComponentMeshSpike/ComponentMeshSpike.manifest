@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "4e8c1f27-9b3d-4a62-8e05-7c2d9a1b3f64",
+	"author": "Stefan",
+	"description": {
+		"": "SPIKE-7: meshing gears in separate components (throwaway)."
+	},
+	"version": "0.0.1",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
