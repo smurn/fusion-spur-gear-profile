@@ -92,6 +92,21 @@ turned so that every tooth faces a tooth space of its neighbor.
 - The start rotation only applies to a gear whose circle touches nothing and has no start
   line.
 
+### Sector gears
+
+For a gear that only turns part of the way, draw an arc instead of a circle: the gear's rim
+as it is at the start, covering the part that rolls past the gears it meshes with. Draw it
+in the layout sketch like any other gear; it meshes with the circles that touch it on the
+arc, as many as you like. The gear can turn until one of them reaches an end of the arc; the
+info box shows this range of motion.
+
+At the ends of the motion the gear still needs teeth beyond the arc to mesh fully.
+**Automatic extra teeth** (on by default) adds as many as the gears it meshes with need:
+every tooth that the other gear's teeth can reach. Without other gears it assumes a rack,
+the most demanding case. **Extra teeth** adds more at each end, or removes some if
+negative. The two fields are shown for arcs only. If the teeth would go all the way round,
+the gear becomes a full gear.
+
 ## Development
 
 - `gearcore/` is the gear math in pure Python. Run its tests with `python -m pytest` from the

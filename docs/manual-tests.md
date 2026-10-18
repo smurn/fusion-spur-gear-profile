@@ -103,11 +103,13 @@ custom features (FEA-11).
 35. Edit it and set Bore diameter to 4 mm. A round hole goes through the gear. Set it to
     9 mm: the info box says the bore does not fit inside the root circle and OK is disabled.
 36. Draw an arc of radius 12 mm covering about 120 degrees. Create a gear on it. It is a
-    sector: teeth along the arc, centered on the arc's middle, closed by two straight edges
-    that meet at the arc's center. The info box shows how many teeth are generated.
+    sector: teeth along the arc and beyond it (Automatic extra teeth, GEO-13), centered on
+    the arc's middle, closed by two straight edges that meet at the arc's center. The info
+    box shows how many teeth are generated and the range of motion, 120 deg.
 37. Edit it and set Bore diameter to 6 mm. The straight edges now end on a round cutout around
     the center.
-38. Edit the sketch and make the arc longer. Teeth are added. Make it shorter than one tooth
+38. Edit the sketch and make the arc longer. Teeth are added. Edit the gear, turn off
+    Automatic extra teeth and set Extra teeth to -1, then make the arc shorter than one tooth
     pitch: the feature fails and keeps its previous body.
 39. Set Start rotation to 50 on the sector gear. The teeth shift by half a pitch and the count
     may change by one.
@@ -269,3 +271,31 @@ center fixed by dimensions or tangent constraints:
 99. A gear made with Flip side ticked, before this version: it keeps its shape after the
     add-in update. Edit it: Distance shows its old value negated (for example "-(5 mm)"). OK:
     the gear stays where it was.
+
+## Sector gears: range of motion and extra teeth (GEO-13, DER-12, IN-30, IN-31, UI-13, TRN-12)
+
+Layout sketch for these steps: an arc S of radius 20 mm from 30 to 150 deg around the origin,
+a circle M1 of radius 10 mm tangent to it at 60 deg, and a circle M2 of radius 15 mm tangent
+to it at 100 deg. Module 1 mm.
+
+100. Start Spur Gear and pick a circle: there is no Automatic extra teeth and no Extra teeth.
+     Pick S: both appear after Start rotation, Automatic extra teeth ticked, Extra teeth 0.
+101. With S picked, the info box shows "18 of 40 teeth" and "Range of motion 80.0 deg" (the
+     arc's 120 deg minus the 40 deg between M1 and M2). The teeth go beyond both ends of the
+     arc. OK.
+102. Make gears on M1 and M2 as well. Turn the sector gear by its range of motion in either
+     direction (for example with a joint, or by rotating copies of the bodies): at each end,
+     the mate that reached the end of the arc still meshes with complete teeth.
+103. Edit the sector gear: untick Automatic extra teeth. The teeth now end at the arc (14 of
+     40). Set Extra teeth to 2: 18 of 40. Set it to 0.5: an error about a whole number, OK
+     disabled. Tick Automatic again and set Extra teeth to -2: 14 of 40. Undo back to 0.
+104. Delete M2 from the layout sketch. The sector gear recomputes: the range of motion is
+     120 deg, and the teeth now reach as far as M1 needs at both ends.
+105. A sector gear not in any train (an arc on its own): the range of motion is the arc's
+     angle and the teeth reach as far as a rack would need.
+106. Lengthen the arc S until the teeth would go all the way round: the gear becomes a full
+     gear, with the bore as a round hole.
+107. Create a sector gear with Automatic extra teeth unticked, then start Spur Gear again: it
+     starts unticked (UI-7). Change Parameters lists Extra teeth.
+108. A sector gear made before this version keeps Automatic extra teeth off, and its Extra
+     teeth input is disabled. It may have one more tooth at each end than before (D-37).
