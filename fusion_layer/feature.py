@@ -89,10 +89,20 @@ def to_gear_params(frame: geometry.Frame, values: dict) -> gearcore.GearParams:
         tolerance=mm('tolerance'), thickness=mm('thickness'), bore=mm('bore'))
 
 
+def parameter_of(feature: adsk.fusion.CustomFeature, pid: str):
+    """A feature parameter, or None if the gear was created before the parameter
+    existed: Fusion cannot add one to an existing feature (FEA-5). For an unknown
+    id, itemById raises "Invalid argument id" rather than returning None."""
+    try:
+        return feature.parameters.itemById(pid)
+    except RuntimeError:
+        return None
+
+
 def parameter_value(feature: adsk.fusion.CustomFeature, pid: str, kind: str, default: str) -> float:
-    """A feature parameter's value. Fusion cannot add a parameter to an existing
-    feature, so a gear created before the parameter existed gets its default (FEA-5)."""
-    parameter = feature.parameters.itemById(pid)
+    """A feature parameter's value, or its default for a gear created before the
+    parameter existed (FEA-5)."""
+    parameter = parameter_of(feature, pid)
     if parameter is None:
         return design().unitsManager.evaluateExpression(default, unit(kind))
     return parameter.value
@@ -346,7 +356,7 @@ class SpurGearFeature:
                     choice.listItems.add(name, name == start)
             value_input = inputs.addValueInput(pid, label, unit(kind), self._initial(pid, kind, default)[0])
             if pid == 'start_offset':
-                if feature and feature.parameters.itemById(pid) is None:
+                if feature and parameter_of(feature, pid) is None:
                     value_input.isEnabled = False   # FEA-5
                     value_input.tooltip = ('This gear was made before the start offset existed. '
                                            'Create it again to use one.')
@@ -388,7 +398,7 @@ class SpurGearFeature:
         standard = units.evaluateExpression(default, unit(kind))
         by_string = adsk.core.ValueInput.createByString
         if self._editing:
-            parameter = self._editing.parameters.itemById(pid)
+            parameter = parameter_of(self._editing, pid)
             if parameter is None:   # FEA-5: made before this parameter existed
                 return by_string(default), False
             return by_string(parameter.expression), abs(parameter.value - standard) > 1e-9
@@ -721,7 +731,7 @@ class SpurGearFeature:
         feature.timelineObject.rollTo(True)
         try:
             for pid, _, _, _ in PARAMS:
-                parameter = feature.parameters.itemById(pid)
+                parameter = parameter_of(feature, pid)
                 if parameter is not None:   # FEA-5: missing on gears made before it existed
                     parameter.expression = settings.expressions[pid]
             feature.customNamedValues.addOrSetValue('flip', '1' if settings.flip else '0')
