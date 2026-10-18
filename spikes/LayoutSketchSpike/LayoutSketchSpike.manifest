@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"id": "8a3f6d12-5e4b-4c7a-b9d0-2f6e1c8a4b73",
+	"author": "Stefan",
+	"description": {
+		"": "SPIKE-8: gears oriented from a layout sketch (throwaway)."
+	},
+	"version": "0.0.1",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
