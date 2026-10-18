@@ -4,7 +4,7 @@ Status: **Draft 0.9** (2026-10-18). Version 0.8 describes the add-in as implemen
 version 0.9.0. Draft 0.9 adds gear trains oriented from a layout sketch (§7), which are not
 implemented yet: TRN-1 to TRN-11, the train part of GEO-9, FEA-12 to FEA-14, UI-9, VAL-20 to
 VAL-24, D-27 to D-31, ARC-8 and the train checks in TST-2. It also adds a start option like
-Extrude's: IN-18 to IN-20, the start part of GEO-12, UI-10, VAL-25, VAL-26, D-32 and CHK-9. Requirements have stable IDs
+Extrude's: IN-18 to IN-20, the start part of GEO-12, UI-10, VAL-25, VAL-26 and D-32. Requirements have stable IDs
 (`GEO-3`, `FEA-5`, …). Tests and code reference these IDs. Decisions are recorded in §12.
 
 History: draft 0.3 replaced the sketch-constraint design of draft 0.2 with a custom feature
@@ -415,8 +415,10 @@ of the add-in (2026-10-11):
   (FEA-10): works.
 - **CHK-5** Position of a joined gear after its curve moves (FEA-4, FEA-6): works.
 - **CHK-6** Preview inside the dialog (UI-3): works for create and edit.
-- **CHK-9** Open: a gear that joins a body and starts on a face of that same body (IN-20). A
-  joined gear that depended on its target body did not appear at all in an early test.
+- **CHK-9** A gear that joins a body and starts on a face of that same body (IN-20): works
+  (2026-10-18). It follows the face when the body gets thicker, and it can be edited. The
+  preview shows such a gear as its own body: joining it in the preview replaced the selected
+  face, and Fusion then disabled OK.
 
 The gear-train design was tested in SPIKE-8: projections lead back to the layout sketch, the
 dependency on it is accepted in the root component and through an occurrence, and every
